@@ -47,7 +47,7 @@ func newTVFixture(t *testing.T) *fixture {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); sc.Wait() })
 	opts := Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}}
-	srv := httptest.NewServer(New(ctx, opts, store, sc, nil).Handler())
+	srv := httptest.NewServer(New(ctx, opts, store, sc, mustPlay(t), nil).Handler())
 	t.Cleanup(srv.Close)
 	return &fixture{srv: srv, store: store, section: sec, root: root}
 }

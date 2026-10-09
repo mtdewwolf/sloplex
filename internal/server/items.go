@@ -54,6 +54,9 @@ func (s *Server) handleSectionAll(w http.ResponseWriter, r *http.Request) {
 	if slices.Contains(sectionTypes[sec.Type], typ) {
 		items = s.store.Items(sec.ID, typ)
 	}
+	if r.URL.Query().Get("unwatched") == "1" {
+		items = s.unwatched(s.account(r), items)
+	}
 	def := "titleSort"
 	if typ == library.TypeSeason || typ == library.TypeEpisode {
 		def = "index"
@@ -97,7 +100,7 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	mc := MediaContainer{Metadata: []Metadata{s.metadata(it)}}
+	mc := MediaContainer{Metadata: []Metadata{s.metadata(it, s.account(r))}}
 	s.setSection(&mc, it.SectionID)
 	writeContainer(w, r, mc)
 }
@@ -143,6 +146,7 @@ func (s *Server) setSection(mc *MediaContainer, sectionID int) {
 func (s *Server) page(r *http.Request, mc *MediaContainer, items []library.Item, defaultSize int) {
 	start := pagingParam(r, "X-Plex-Container-Start", 0)
 	size := pagingParam(r, "X-Plex-Container-Size", defaultSize)
+	acct := s.account(r)
 	total := len(items)
 	paged := r.URL.Query().Has("X-Plex-Container-Start") || r.Header.Get("X-Plex-Container-Start") != "" ||
 		size >= 0 && size < total
@@ -152,7 +156,7 @@ func (s *Server) page(r *http.Request, mc *MediaContainer, items []library.Item,
 		end = min(start+size, total)
 	}
 	for _, it := range items[start:end] {
-		mc.Metadata = append(mc.Metadata, s.metadata(it))
+		mc.Metadata = append(mc.Metadata, s.metadata(it, acct))
 	}
 	if paged {
 		mc.TotalSize, mc.Offset = &total, &start
@@ -250,7 +254,7 @@ func (s *Server) sortItems(items []library.Item, spec, def string) {
 
 func metadataKey(id int) string { return "/library/metadata/" + strconv.Itoa(id) }
 
-func (s *Server) metadata(it library.Item) Metadata {
+func (s *Server) metadata(it library.Item, acct int) Metadata {
 	rk := strconv.Itoa(it.ID)
 	md := Metadata{
 		XMLName:           xmlName(it.Type),
@@ -272,14 +276,21 @@ func (s *Server) metadata(it library.Item) Metadata {
 		md.LibrarySectionTitle = sec.Title
 	}
 
+	if library.IsLeaf(it.Type) {
+		st := s.play.Get(acct, it.ID)
+		md.ViewCount, md.ViewOffset, md.LastViewedAt = st.ViewCount, st.ViewOffset, st.LastViewedAt
+	} else {
+		r := s.rollup(acct, it.ID)
+		md.LeafCount, md.ViewedLeafCount, md.LastViewedAt = r.leaves, &r.viewed, r.lastViewedAt
+	}
+
 	switch it.Type {
 	case library.TypeShow:
 		md.Key += "/children"
-		md.ChildCount, md.LeafCount = s.store.Counts(it.ID)
+		md.ChildCount, _ = s.store.Counts(it.ID)
 	case library.TypeSeason:
 		md.Key += "/children"
 		md.Index = &it.Index
-		_, md.LeafCount = s.store.Counts(it.ID)
 		if show, err := s.store.Item(it.ParentID); err == nil {
 			md.ParentRatingKey, md.ParentKey, md.ParentTitle = strconv.Itoa(show.ID), metadataKey(show.ID), show.Title
 		}

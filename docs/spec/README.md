@@ -34,6 +34,7 @@ source.
 | [http-api.md](http-api.md) | Transport, content negotiation, MediaContainer, endpoints  |
 | [auth.md](auth.md)         | Local token authentication                                 |
 | [discovery.md](discovery.md) | GDM LAN discovery                                        |
+| [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
 
 ## Conventions
 

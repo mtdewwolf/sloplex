@@ -19,6 +19,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/gdm"
 	"github.com/mtdewwolf/sloplex/internal/identity"
 	"github.com/mtdewwolf/sloplex/internal/library"
+	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 	"github.com/mtdewwolf/sloplex/internal/server"
 )
@@ -77,6 +78,11 @@ func run(configPath string, log *slog.Logger) error {
 		return err
 	}
 
+	play, err := playstate.Open(filepath.Join(cfg.DataDir, "playstate.json"))
+	if err != nil {
+		return err
+	}
+
 	var prober probe.Prober = probe.None{}
 	if cfg.FFprobe != "-" {
 		if p, err := probe.NewFFprobe(cfg.FFprobe); err != nil {
@@ -101,7 +107,7 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-	}, store, scanner, log)
+	}, store, scanner, play, log)
 
 	started := time.Now().Unix()
 	if cfg.Discovery {

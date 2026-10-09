@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/atomicfile"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 )
 
@@ -397,22 +397,7 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".library-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), s.path)
+	return atomicfile.Write(s.path, b, 0o644)
 }
 
 func (sec *Section) clone() Section {

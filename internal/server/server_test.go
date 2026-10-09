@@ -15,8 +15,18 @@ import (
 	"time"
 
 	"github.com/mtdewwolf/sloplex/internal/library"
+	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 )
+
+func mustPlay(t *testing.T) *playstate.Store {
+	t.Helper()
+	p, err := playstate.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
 
 const testToken = "secret-token"
 
@@ -59,7 +69,7 @@ func newFixture(t *testing.T, opts Options) *fixture {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); sc.Wait() })
-	srv := httptest.NewServer(New(ctx, opts, store, sc, nil).Handler())
+	srv := httptest.NewServer(New(ctx, opts, store, sc, mustPlay(t), nil).Handler())
 	t.Cleanup(srv.Close)
 	return &fixture{srv: srv, store: store, section: sec, root: root}
 }

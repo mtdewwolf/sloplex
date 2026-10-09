@@ -131,6 +131,9 @@ Notes:
 - A season's `title` is `Season N`, or `Specials` for index 0
   **(sloplex)**.
 
+Play-state attributes (`viewCount`, `viewOffset`, `lastViewedAt`, and
+`viewedLeafCount`) are described in [playstate.md](playstate.md).
+
 Leaf children: one or more `Media`.
 
 ### Media
@@ -209,6 +212,7 @@ show section. Supports paging and sorting.
   container.
 - The container sets `librarySectionID`, `librarySectionTitle`, `title1`, and
   `viewGroup` (the listed item type).
+- `unwatched=1` filters by play state; see [playstate.md](playstate.md).
 
 ### `GET /library/sections/{id}/recentlyAdded`
 

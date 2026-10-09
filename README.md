@@ -24,11 +24,12 @@ Sloplex is a standalone product:
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
 | Direct play (byte-range streaming) | ✅                                       |
+| Watched/resume state, On Deck      | ✅ scrobble, timeline, unwatched filter  |
 | Date-based TV episodes             | ⏳                                       |
 | Music                              | ⏳                                       |
 | Artwork, external metadata agents  | ⏳                                       |
 | Transcoding (HLS/DASH)             | ⏳                                       |
-| Watch state, users                 | ⏳                                       |
+| Multiple users                     | ⏳ play state is already per account     |
 
 ## Quick start
 
@@ -65,7 +66,7 @@ details. Without it, Sloplex reports only the container.
 |-------------------|----------------|-----------------------------------------------------------|
 | `friendlyName`    | hostname       | The name shown to clients                                 |
 | `listen`          | `:32400`       | HTTP listen address                                       |
-| `dataDir`         | `data`         | Holds `identity.json` and `library.json`                  |
+| `dataDir`         | `data`         | Holds `identity.json`, `library.json`, `playstate.json`   |
 | `discovery`       | `true`         | Answer GDM searches on UDP 32414                          |
 | `tokens`          | `[]`           | Extra accepted tokens                                     |
 | `allowedNetworks` | `[]`           | CIDRs that skip token auth                                |
@@ -79,6 +80,7 @@ cmd/sloplex/        entrypoint
 internal/config/    config file loading and validation
 internal/identity/  machine identifier and token persistence
 internal/library/   section/item store, filename parsing, scanner
+internal/playstate/ per-account watched/resume state
 internal/probe/     ffprobe wrapper
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder

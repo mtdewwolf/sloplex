@@ -86,6 +86,12 @@ type Metadata struct {
 	ChildCount  int   `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
 	LeafCount   int   `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
 
+	// Play state; see docs/spec/playstate.md.
+	ViewCount       int   `xml:"viewCount,attr,omitempty" json:"viewCount,omitempty"`
+	ViewOffset      int64 `xml:"viewOffset,attr,omitempty" json:"viewOffset,omitempty"`
+	LastViewedAt    int64 `xml:"lastViewedAt,attr,omitempty" json:"lastViewedAt,omitempty"`
+	ViewedLeafCount *int  `xml:"viewedLeafCount,attr,omitempty" json:"viewedLeafCount,omitempty"`
+
 	ParentRatingKey      string `xml:"parentRatingKey,attr,omitempty" json:"parentRatingKey,omitempty"`
 	ParentKey            string `xml:"parentKey,attr,omitempty" json:"parentKey,omitempty"`
 	ParentTitle          string `xml:"parentTitle,attr,omitempty" json:"parentTitle,omitempty"`
