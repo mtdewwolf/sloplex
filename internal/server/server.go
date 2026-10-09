@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 )
@@ -29,12 +30,22 @@ type Options struct {
 	AllowedNetworks []netip.Prefix
 }
 
+// Deps are the services a Server uses.
+type Deps struct {
+	Store   *library.Store
+	Scanner *library.Scanner
+	Play    *playstate.Store
+	Art     *artwork.Service
+	Log     *slog.Logger // optional
+}
+
 // Server serves the HTTP API.
 type Server struct {
 	opts    Options
 	store   *library.Store
 	scanner *library.Scanner
 	play    *playstate.Store
+	art     *artwork.Service
 	log     *slog.Logger
 	auth    *authenticator
 	// baseCtx is the parent of background work started by requests, such as
@@ -44,12 +55,12 @@ type Server struct {
 }
 
 // New returns a Server. Background scans started by requests use ctx.
-func New(ctx context.Context, opts Options, store *library.Store, scanner *library.Scanner, play *playstate.Store, log *slog.Logger) *Server {
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
+func New(ctx context.Context, opts Options, d Deps) *Server {
+	if d.Log == nil {
+		d.Log = slog.New(slog.DiscardHandler)
 	}
 	return &Server{
-		opts: opts, store: store, scanner: scanner, play: play, log: log,
+		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks),
 		baseCtx: ctx, started: time.Now(),
 	}
@@ -72,6 +83,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /library/metadata/{id}/children", s.handleChildren)
 	mux.HandleFunc("GET /library/metadata/{id}/allLeaves", s.handleAllLeaves)
 	mux.HandleFunc("GET /library/parts/{id}/{ts}/{file}", s.handlePart)
+	for _, kind := range []string{library.ImageThumb, library.ImageArt, library.ImageBanner} {
+		mux.HandleFunc("GET /library/metadata/{id}/"+kind, s.handleImage(kind))
+		mux.HandleFunc("GET /library/metadata/{id}/"+kind+"/{ts}", s.handleImage(kind))
+	}
+	mux.HandleFunc("GET /photo/:/transcode", s.handlePhotoTranscode)
 	mux.HandleFunc("GET /library/onDeck", s.handleOnDeck)
 	mux.HandleFunc("GET /library/sections/{id}/onDeck", s.handleOnDeck)
 	for path, h := range map[string]http.HandlerFunc{

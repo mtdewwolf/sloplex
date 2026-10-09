@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -60,6 +61,22 @@ type Item struct {
 	AddedAt   int64   `json:"addedAt"`
 	UpdatedAt int64   `json:"updatedAt"`
 	Media     []Media `json:"media,omitempty"`
+	// Images maps an artwork kind (ImageThumb, ImageArt, ImageBanner) to a
+	// local image file.
+	Images map[string]Image `json:"images,omitempty"`
+}
+
+// Artwork kinds.
+const (
+	ImageThumb  = "thumb"
+	ImageArt    = "art"
+	ImageBanner = "banner"
+)
+
+// Image is a local artwork file.
+type Image struct {
+	Path    string `json:"path"`
+	ModTime int64  `json:"modTime"`
 }
 
 // Media is one version of an item.
@@ -363,6 +380,19 @@ func (s *Store) KnownFile(sectionID int, path string) (size, modTime int64, info
 	return 0, 0, probe.Info{}, false
 }
 
+// SetImages replaces the artwork of every item in a section. Items missing
+// from images lose their artwork.
+func (s *Store) SetImages(sectionID int, images map[int]map[string]Image) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, it := range s.d.Items {
+		if it.SectionID == sectionID {
+			it.Images = maps.Clone(images[it.ID])
+		}
+	}
+	return s.saveLocked()
+}
+
 // ApplyScan replaces the contents of a section with the scanned files,
 // keeping item, media and part IDs for what was already known. See the
 // scanning rules in docs/spec/http-api.md.
@@ -408,6 +438,7 @@ func (sec *Section) clone() Section {
 
 func (it *Item) clone() Item {
 	c := *it
+	c.Images = maps.Clone(it.Images)
 	if it.Media != nil {
 		c.Media = make([]Media, len(it.Media))
 		for i, m := range it.Media {

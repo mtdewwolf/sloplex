@@ -30,7 +30,10 @@ type Config struct {
 	// AllowedNetworks are CIDRs whose clients skip token authentication.
 	AllowedNetworks []string `json:"allowedNetworks"`
 	// FFprobe is the ffprobe binary: "" looks it up on PATH, "-" disables probing.
-	FFprobe   string    `json:"ffprobe"`
+	FFprobe string `json:"ffprobe"`
+	// FFmpeg is the ffmpeg binary used for thumbnails: "" looks it up on
+	// PATH, "-" disables it.
+	FFmpeg    string    `json:"ffmpeg"`
 	Libraries []Library `json:"libraries"`
 }
 

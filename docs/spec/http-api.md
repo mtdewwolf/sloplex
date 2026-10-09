@@ -134,6 +134,10 @@ Notes:
 Play-state attributes (`viewCount`, `viewOffset`, `lastViewedAt`, and
 `viewedLeafCount`) are described in [playstate.md](playstate.md).
 
+Image attributes (`thumb`, `art`, `banner`, `parentThumb`,
+`grandparentThumb`, and `grandparentArt`) are described in
+[artwork.md](artwork.md).
+
 Leaf children: one or more `Media`.
 
 ### Media

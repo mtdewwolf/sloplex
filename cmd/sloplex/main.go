@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -10,11 +11,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/config"
 	"github.com/mtdewwolf/sloplex/internal/gdm"
 	"github.com/mtdewwolf/sloplex/internal/identity"
@@ -92,6 +95,17 @@ func run(configPath string, log *slog.Logger) error {
 		}
 	}
 
+	ffmpeg := ""
+	if cfg.FFmpeg != "-" {
+		bin := cmp.Or(cfg.FFmpeg, "ffmpeg")
+		if p, err := exec.LookPath(bin); err != nil {
+			log.Warn("ffmpeg not available; episodes without artwork get no thumbnail", "err", err)
+		} else {
+			ffmpeg = p
+		}
+	}
+	art := artwork.New(filepath.Join(cfg.DataDir, "cache"), ffmpeg)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -107,7 +121,7 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-	}, store, scanner, play, log)
+	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Log: log})
 
 	started := time.Now().Unix()
 	if cfg.Discovery {

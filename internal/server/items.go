@@ -284,6 +284,10 @@ func (s *Server) metadata(it library.Item, acct int) Metadata {
 		md.LeafCount, md.ViewedLeafCount, md.LastViewedAt = r.leaves, &r.viewed, r.lastViewedAt
 	}
 
+	md.Thumb = s.imageURL(it, library.ImageThumb)
+	md.Art = s.imageURL(it, library.ImageArt)
+	md.Banner = s.imageURL(it, library.ImageBanner)
+
 	switch it.Type {
 	case library.TypeShow:
 		md.Key += "/children"
@@ -293,14 +297,22 @@ func (s *Server) metadata(it library.Item, acct int) Metadata {
 		md.Index = &it.Index
 		if show, err := s.store.Item(it.ParentID); err == nil {
 			md.ParentRatingKey, md.ParentKey, md.ParentTitle = strconv.Itoa(show.ID), metadataKey(show.ID), show.Title
+			md.ParentThumb = s.imageURL(show, library.ImageThumb)
+			md.Thumb = cmp.Or(md.Thumb, md.ParentThumb)
+			md.Art = cmp.Or(md.Art, s.imageURL(show, library.ImageArt))
 		}
 	case library.TypeEpisode:
 		md.Index = &it.Index
 		if season, err := s.store.Item(it.ParentID); err == nil {
 			md.ParentRatingKey, md.ParentKey, md.ParentTitle = strconv.Itoa(season.ID), metadataKey(season.ID), season.Title
 			md.ParentIndex = &season.Index
+			md.ParentThumb = s.imageURL(season, library.ImageThumb)
 			if show, err := s.store.Item(season.ParentID); err == nil {
 				md.GrandparentRatingKey, md.GrandparentKey, md.GrandparentTitle = strconv.Itoa(show.ID), metadataKey(show.ID), show.Title
+				md.GrandparentThumb = s.imageURL(show, library.ImageThumb)
+				md.GrandparentArt = s.imageURL(show, library.ImageArt)
+				md.ParentThumb = cmp.Or(md.ParentThumb, md.GrandparentThumb)
+				md.Art = cmp.Or(md.Art, md.GrandparentArt)
 			}
 		}
 	}

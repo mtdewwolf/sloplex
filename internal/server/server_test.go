@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
@@ -67,11 +68,18 @@ func newFixture(t *testing.T, opts Options) *fixture {
 	if opts.MachineID == "" {
 		opts = Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}, AllowedNetworks: opts.AllowedNetworks}
 	}
+	return &fixture{srv: startServer(t, opts, store, sc, ""), store: store, section: sec, root: root}
+}
+
+// startServer serves a Server over httptest. ffmpeg enables frame grabs.
+func startServer(t *testing.T, opts Options, store *library.Store, sc *library.Scanner, ffmpeg string) *httptest.Server {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); sc.Wait() })
-	srv := httptest.NewServer(New(ctx, opts, store, sc, mustPlay(t), nil).Handler())
+	art := artwork.New(filepath.Join(t.TempDir(), "cache"), ffmpeg)
+	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art}).Handler())
 	t.Cleanup(srv.Close)
-	return &fixture{srv: srv, store: store, section: sec, root: root}
+	return srv
 }
 
 func (f *fixture) get(t *testing.T, path string, hdr map[string]string) *http.Response {

@@ -99,6 +99,9 @@ func (sc *Scanner) Scan(ctx context.Context, sectionID int) (ScanStats, error) {
 	if err != nil {
 		return ScanStats{}, err
 	}
+	if err := sc.store.SetImages(sec.ID, findArtwork(sec, sc.store)); err != nil {
+		return ScanStats{}, err
+	}
 	sc.log.Info("scan finished", "section", sec.ID, "title", sec.Title,
 		"files", stats.Files, "added", stats.Added, "updated", stats.Updated,
 		"removed", stats.Removed, "took", time.Since(start).Round(time.Millisecond))

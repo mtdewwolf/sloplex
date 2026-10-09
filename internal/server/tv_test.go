@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,12 +43,8 @@ func newTVFixture(t *testing.T) *fixture {
 	if _, err := sc.Scan(context.Background(), sec); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() { cancel(); sc.Wait() })
 	opts := Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}}
-	srv := httptest.NewServer(New(ctx, opts, store, sc, mustPlay(t), nil).Handler())
-	t.Cleanup(srv.Close)
-	return &fixture{srv: srv, store: store, section: sec, root: root}
+	return &fixture{srv: startServer(t, opts, store, sc, ""), store: store, section: sec, root: root}
 }
 
 func titles(mc MediaContainer) string {

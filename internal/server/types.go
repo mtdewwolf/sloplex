@@ -86,6 +86,14 @@ type Metadata struct {
 	ChildCount  int   `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
 	LeafCount   int   `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
 
+	// Artwork; see docs/spec/artwork.md.
+	Thumb            string `xml:"thumb,attr,omitempty" json:"thumb,omitempty"`
+	Art              string `xml:"art,attr,omitempty" json:"art,omitempty"`
+	Banner           string `xml:"banner,attr,omitempty" json:"banner,omitempty"`
+	ParentThumb      string `xml:"parentThumb,attr,omitempty" json:"parentThumb,omitempty"`
+	GrandparentThumb string `xml:"grandparentThumb,attr,omitempty" json:"grandparentThumb,omitempty"`
+	GrandparentArt   string `xml:"grandparentArt,attr,omitempty" json:"grandparentArt,omitempty"`
+
 	// Play state; see docs/spec/playstate.md.
 	ViewCount       int   `xml:"viewCount,attr,omitempty" json:"viewCount,omitempty"`
 	ViewOffset      int64 `xml:"viewOffset,attr,omitempty" json:"viewOffset,omitempty"`

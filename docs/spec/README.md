@@ -35,6 +35,7 @@ source.
 | [auth.md](auth.md)         | Local token authentication                                 |
 | [discovery.md](discovery.md) | GDM LAN discovery                                        |
 | [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
+| [artwork.md](artwork.md)   | Posters, backgrounds, frame grabs, image resizing          |
 
 ## Conventions
 

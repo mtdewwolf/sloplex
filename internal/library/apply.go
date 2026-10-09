@@ -84,7 +84,7 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 	changed := false
 	if base != nil {
 		a.taken[base.ID] = true
-		it.ID, it.AddedAt, it.UpdatedAt = base.ID, base.AddedAt, base.UpdatedAt
+		it.ID, it.AddedAt, it.UpdatedAt, it.Images = base.ID, base.AddedAt, base.UpdatedAt, base.Images
 	} else {
 		it.ID, it.AddedAt = next(&a.s.d.NextItemID), a.ts
 		a.stats.Added++
@@ -127,7 +127,7 @@ func (a *applier) container(it *Item, base *Item) bool {
 		it.ID, it.AddedAt, it.UpdatedAt = next(&a.s.d.NextItemID), a.ts, a.ts
 		return true
 	}
-	it.ID, it.AddedAt, it.UpdatedAt = base.ID, base.AddedAt, base.UpdatedAt
+	it.ID, it.AddedAt, it.UpdatedAt, it.Images = base.ID, base.AddedAt, base.UpdatedAt, base.Images
 	return base.Title != it.Title || base.Year != it.Year
 }
 
