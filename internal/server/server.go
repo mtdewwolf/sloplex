@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +67,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /library/sections/{id}/refresh", s.handleRefresh)
 	mux.HandleFunc("GET /library/recentlyAdded", s.handleRecentlyAdded)
 	mux.HandleFunc("GET /library/metadata/{id}", s.handleMetadata)
+	mux.HandleFunc("GET /library/metadata/{id}/children", s.handleChildren)
+	mux.HandleFunc("GET /library/metadata/{id}/allLeaves", s.handleAllLeaves)
 	mux.HandleFunc("GET /library/parts/{id}/{ts}/{file}", s.handlePart)
 	return logRequests(s.log, cors(s.auth.wrap(mux)))
 }
@@ -106,6 +107,11 @@ func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 	writeContainer(w, r, mc)
 }
 
+var scannerNames = map[string]string{
+	library.TypeMovie: "Sloplex Movie Scanner",
+	library.TypeShow:  "Sloplex TV Scanner",
+}
+
 func (s *Server) sectionDirectory(sec library.Section) Directory {
 	refreshing := Bool(s.scanner.Refreshing(sec.ID))
 	d := Directory{
@@ -113,7 +119,7 @@ func (s *Server) sectionDirectory(sec library.Section) Directory {
 		Title:      sec.Title,
 		Type:       sec.Type,
 		Agent:      "sloplex.local",
-		Scanner:    "Sloplex Movie Scanner",
+		Scanner:    scannerNames[sec.Type],
 		Language:   "en",
 		UUID:       sec.UUID,
 		Refreshing: &refreshing,
@@ -156,113 +162,6 @@ func (s *Server) handleSection(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleSectionAll(w http.ResponseWriter, r *http.Request) {
-	sec, ok := s.section(w, r)
-	if !ok {
-		return
-	}
-	items := s.store.Items(sec.ID)
-	sortItems(items, r.URL.Query().Get("sort"))
-	mc := MediaContainer{
-		Title1:              sec.Title,
-		LibrarySectionID:    sec.ID,
-		LibrarySectionTitle: sec.Title,
-		ViewGroup:           sec.Type,
-	}
-	s.page(r, &mc, items, -1)
-	writeContainer(w, r, mc)
-}
-
-func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
-	sectionID := 0
-	mc := MediaContainer{Title1: "Recently Added"}
-	if r.PathValue("id") != "" {
-		sec, ok := s.section(w, r)
-		if !ok {
-			return
-		}
-		sectionID = sec.ID
-		mc.LibrarySectionID, mc.LibrarySectionTitle = sec.ID, sec.Title
-	}
-	items := s.store.Items(sectionID)
-	sortItems(items, "addedAt:desc")
-	s.page(r, &mc, items, 50)
-	writeContainer(w, r, mc)
-}
-
-// page applies X-Plex-Container-Start/Size to items and stores the result in
-// mc. defaultSize < 0 means no limit.
-func (s *Server) page(r *http.Request, mc *MediaContainer, items []library.Item, defaultSize int) {
-	start := pagingParam(r, "X-Plex-Container-Start", 0)
-	size := pagingParam(r, "X-Plex-Container-Size", defaultSize)
-	total := len(items)
-	paged := r.URL.Query().Has("X-Plex-Container-Start") || r.Header.Get("X-Plex-Container-Start") != "" ||
-		size >= 0 && size < total
-	start = min(start, total)
-	end := total
-	if size >= 0 {
-		end = min(start+size, total)
-	}
-	for _, it := range items[start:end] {
-		mc.Metadata = append(mc.Metadata, s.metadata(it))
-	}
-	if paged {
-		mc.TotalSize, mc.Offset = &total, &start
-	}
-}
-
-func pagingParam(r *http.Request, name string, def int) int {
-	v := r.URL.Query().Get(name)
-	if v == "" {
-		v = r.Header.Get(name)
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return def
-	}
-	return n
-}
-
-func sortItems(items []library.Item, spec string) {
-	field, dir, _ := strings.Cut(spec, ":")
-	desc := dir == "desc"
-	key := func(a, b library.Item) int {
-		switch field {
-		case "title":
-			return strings.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
-		case "year":
-			return a.Year - b.Year
-		case "addedAt":
-			return cmpInt64(a.AddedAt, b.AddedAt)
-		case "updatedAt":
-			return cmpInt64(a.UpdatedAt, b.UpdatedAt)
-		default:
-			return strings.Compare(library.SortTitle(a.Title), library.SortTitle(b.Title))
-		}
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		c := key(items[i], items[j])
-		if c == 0 {
-			// Deterministic tie-break, independent of direction.
-			return items[i].ID < items[j].ID
-		}
-		if desc {
-			return c > 0
-		}
-		return c < 0
-	})
-}
-
-func cmpInt64(a, b int64) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	}
-	return 0
-}
-
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	sec, ok := s.section(w, r)
 	if !ok {
@@ -270,24 +169,6 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	s.scanner.Start(s.baseCtx, sec.ID)
 	w.WriteHeader(http.StatusOK)
-}
-
-func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	it, err := s.store.Item(id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	mc := MediaContainer{Metadata: []Metadata{s.metadata(it)}}
-	if sec, err := s.store.Section(it.SectionID); err == nil {
-		mc.LibrarySectionID, mc.LibrarySectionTitle = sec.ID, sec.Title
-	}
-	writeContainer(w, r, mc)
 }
 
 var contentTypes = map[string]string{
@@ -338,66 +219,4 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	}
 	http.ServeContent(w, r, name, fi.ModTime(), f)
-}
-
-func (s *Server) metadata(it library.Item) Metadata {
-	rk := strconv.Itoa(it.ID)
-	md := Metadata{
-		XMLName:           xmlName(it.Type),
-		RatingKey:         rk,
-		Key:               "/library/metadata/" + rk,
-		GUID:              fmt.Sprintf("sloplex://%s/%s", it.Type, rk),
-		Type:              it.Type,
-		Title:             it.Title,
-		Year:              it.Year,
-		AddedAt:           it.AddedAt,
-		UpdatedAt:         it.UpdatedAt,
-		LibrarySectionID:  it.SectionID,
-		LibrarySectionKey: fmt.Sprintf("/library/sections/%d", it.SectionID),
-	}
-	if st := library.SortTitle(it.Title); st != strings.ToLower(it.Title) {
-		md.TitleSort = st
-	}
-	if sec, err := s.store.Section(it.SectionID); err == nil {
-		md.LibrarySectionTitle = sec.Title
-	}
-	for _, m := range it.Media {
-		media := Media{
-			ID: m.ID, Duration: m.Duration, Bitrate: m.Bitrate, Width: m.Width, Height: m.Height,
-			AudioChannels: m.AudioChannels, AudioCodec: m.AudioCodec, VideoCodec: m.VideoCodec,
-			VideoResolution: videoResolution(m.Width, m.Height), Container: m.Container,
-		}
-		for _, p := range m.Parts {
-			media.Part = append(media.Part, Part{
-				ID:        p.ID,
-				Key:       fmt.Sprintf("/library/parts/%d/%d/file%s", p.ID, p.ModTime, strings.ToLower(filepath.Ext(p.File))),
-				Duration:  p.Duration,
-				File:      p.File,
-				Size:      p.Size,
-				Container: p.Container,
-			})
-		}
-		md.Media = append(md.Media, media)
-	}
-	if len(md.Media) > 0 {
-		md.Duration = md.Media[0].Duration
-	}
-	return md
-}
-
-func videoResolution(w, h int) string {
-	switch {
-	case w == 0 && h == 0:
-		return ""
-	case w >= 3200 || h >= 1800:
-		return "4k"
-	case w >= 1700 || h >= 1000:
-		return "1080"
-	case w >= 1100 || h >= 700:
-		return "720"
-	case h >= 400:
-		return "480"
-	default:
-		return "sd"
-	}
 }

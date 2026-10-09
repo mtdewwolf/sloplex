@@ -7,9 +7,10 @@
   - the `MediaContainer` envelope;
   - the `Directory`, `Video`, `Media`, and `Part` element names;
   - the attribute names `ratingKey`, `key`, `librarySectionID`, `addedAt`,
-    and so on;
+    `parentRatingKey`, `grandparentTitle`, `index`, `leafCount`, and so on;
+  - the numeric item types (1 movie, 2 show, 3 season, 4 episode);
   - the `X-Plex-*` header names;
-  - the endpoint paths.
+  - the endpoint paths, including `/children` and `/allLeaves`.
 - Items marked **(sloplex)** are our own choices.
 
 ## Transport
@@ -32,8 +33,9 @@
 - In XML, the attributes of the container and of each element map to JSON
   object fields with the same names. Child elements map to arrays keyed by
   element name.
-- One exception: movie and episode items are `<Video>` elements in XML but sit
-  under the `Metadata` array in JSON.
+- Exception: in XML, movie and episode items are `<Video>` elements, and show
+  and season items are `<Directory>` elements. In JSON, all of them sit under
+  the `Metadata` array.
 - Booleans are encoded as `"1"`/`"0"` in XML and as `true`/`false` in JSON.
 
 ## Paging
@@ -57,10 +59,25 @@ A paged response sets these on the container:
 ## Sorting
 
 - `GET /library/sections/{id}/all` accepts `sort=<field>[:asc|:desc]`.
-- `<field>` is one of `titleSort` (default), `title`, `year`, `addedAt`, or
-  `updatedAt`. Unknown fields fall back to `titleSort`.
+- `<field>` is one of `titleSort`, `title`, `year`, `addedAt`, `updatedAt`, or
+  `index`.
+- The default is `titleSort` for movies and shows, and `index` for seasons and
+  episodes. Unknown fields use the default.
 - `titleSort` is the title in lowercase with one leading article ("the", "a",
   "an") removed.
+- `index` orders hierarchically: by show `titleSort`, then season index, then
+  episode index.
+
+## Item hierarchy
+
+| Type      | Number | XML element | Parent | Children             |
+|-----------|--------|-------------|--------|----------------------|
+| `movie`   | 1      | `Video`     | –      | –                    |
+| `show`    | 2      | `Directory` | –      | seasons              |
+| `season`  | 3      | `Directory` | show   | episodes             |
+| `episode` | 4      | `Video`     | season | –                    |
+
+Leaf items are movies and episodes. Only leaf items carry `Media`.
 
 ## Element reference
 
@@ -70,8 +87,8 @@ These attributes are always present or are added when they apply:
 
 - `size`: the number of child elements.
 - `totalSize` and `offset`: when the response is paged.
-- `title1`, `librarySectionID`, `librarySectionTitle`, `viewGroup`: in
-  library listings.
+- `title1`, `title2`, `librarySectionID`, `librarySectionTitle`,
+  `viewGroup`: in library listings.
 - `friendlyName`, `machineIdentifier`, `version`, `platform`,
   `platformVersion`, `updatedAt`: on the root and identity endpoints.
 
@@ -82,20 +99,39 @@ The attributes are `key`, `title`, `type`, `agent`, `scanner`, `language`,
 
 Library sections have `<Location id="" path=""/>` children.
 
-### Video (JSON: an entry of `Metadata`)
+### Item: Video or Directory (JSON: an entry of `Metadata`)
 
-| Attribute             | Notes                                                    |
-|-----------------------|----------------------------------------------------------|
-| `ratingKey`           | String item ID                                           |
-| `key`                 | `/library/metadata/{ratingKey}`                          |
-| `guid`                | **(sloplex)** `sloplex://{type}/{ratingKey}`             |
-| `type`                | `movie`                                                  |
-| `title`, `titleSort`, `year` |                                                   |
-| `duration`            | ms, taken from the first Media                           |
-| `addedAt`, `updatedAt` | Unix seconds                                            |
-| `librarySectionID`, `librarySectionKey`, `librarySectionTitle` |                 |
+Attributes on all item types:
 
-Children: one or more `Media`.
+| Attribute              | Notes                                                    |
+|------------------------|----------------------------------------------------------|
+| `ratingKey`            | String item ID                                           |
+| `key`                  | Leaves: `/library/metadata/{ratingKey}`. Shows and seasons: `/library/metadata/{ratingKey}/children` |
+| `guid`                 | **(sloplex)** `sloplex://{type}/{ratingKey}`             |
+| `type`                 | `movie`, `show`, `season`, or `episode`                  |
+| `title`, `titleSort`   | `titleSort` is present only when it differs from the lowercased title |
+| `year`                 | Movies and shows                                         |
+| `addedAt`, `updatedAt` | Unix seconds                                             |
+| `librarySectionID`, `librarySectionKey`, `librarySectionTitle` |                  |
+
+Extra attributes by type:
+
+| Type    | Attributes                                                         |
+|---------|--------------------------------------------------------------------|
+| movie   | `duration` (ms, from the first Media)                              |
+| show    | `childCount` (seasons), `leafCount` (episodes)                     |
+| season  | `index` (season number, 0 = specials), `leafCount`, `parentRatingKey`, `parentKey`, `parentTitle` |
+| episode | `index` (episode number), `parentIndex` (season number), `duration`, `parentRatingKey`, `parentKey`, `parentTitle`, `grandparentRatingKey`, `grandparentKey`, `grandparentTitle` |
+
+Notes:
+
+- `parentKey` and `grandparentKey` are `/library/metadata/{id}`.
+- `index` and `parentIndex` are always emitted for seasons and episodes, even
+  when they are 0.
+- A season's `title` is `Season N`, or `Specials` for index 0
+  **(sloplex)**.
+
+Leaf children: one or more `Media`.
 
 ### Media
 
@@ -150,9 +186,10 @@ relative to `/library/`.
 Returns one Directory per library section:
 
 - `key` is the section ID.
-- `type` is `movie`.
+- `type` is `movie` or `show`.
 - `agent` is `sloplex.local` **(sloplex)**.
-- `scanner` is `Sloplex Movie Scanner` **(sloplex)**.
+- `scanner` is `Sloplex Movie Scanner` or `Sloplex TV Scanner`
+  **(sloplex)**.
 - `refreshing` is true while a scan is running.
 - It has `Location` children.
 
@@ -163,14 +200,20 @@ Returns the section's views as Directories with keys `all` and
 
 ### `GET /library/sections/{id}/all`
 
-Returns all items in the section as Video elements. Supports paging and
-sorting. The container sets `librarySectionID`, `librarySectionTitle`,
-`title1`, and `viewGroup` (the section type).
+Returns the section's top-level items: movies in a movie section, shows in a
+show section. Supports paging and sorting.
+
+- `type=<number|name>` selects another item type in the section. A show
+  section accepts 2/`show`, 3/`season`, and 4/`episode`. A movie section
+  accepts 1/`movie`. A type the section cannot hold returns an empty
+  container.
+- The container sets `librarySectionID`, `librarySectionTitle`, `title1`, and
+  `viewGroup` (the listed item type).
 
 ### `GET /library/sections/{id}/recentlyAdded`
 
-Returns the section's items ordered by `addedAt`, newest first. Supports
-paging. The default size is 50 **(sloplex)**.
+Returns the section's leaf items (movies or episodes) ordered by `addedAt`,
+newest first. Supports paging. The default size is 50 **(sloplex)**.
 
 ### `GET|PUT /library/sections/{id}/refresh`
 
@@ -187,8 +230,23 @@ Same as the section variant, but across all sections.
 
 ### `GET /library/metadata/{ratingKey}`
 
-Returns a container with exactly one Video. Returns 404 if the item is
-unknown.
+Returns a container with exactly one item, of any type. Returns 404 if the
+item is unknown.
+
+### `GET /library/metadata/{ratingKey}/children`
+
+Returns the item's direct children: a show's seasons or a season's episodes,
+ordered by `index`. Supports paging.
+
+- The container sets `title1` (the parent's title), `title2` (the item's
+  title), `viewGroup` (the child type), and `librarySectionID`/`Title`.
+- A leaf item returns an empty container. An unknown item returns 404.
+
+### `GET /library/metadata/{ratingKey}/allLeaves`
+
+Returns every episode under a show or a season, ordered by season index and
+then episode index. Supports paging. A leaf item returns an empty container.
+An unknown item returns 404.
 
 ### `GET|HEAD /library/parts/{id}/{ts}/{filename}`
 
@@ -201,9 +259,11 @@ Streams the original file bytes ("direct play").
 - `?download=1` adds `Content-Disposition: attachment`.
 - Returns 404 if the part is unknown or its file is missing.
 
-## Scanning (movie sections)
+## Scanning
 
 **(sloplex)**
+
+### Common rules
 
 - The scanner walks every configured path of the section.
 - Video files are recognised by extension: `mkv`, `mp4`, `m4v`, `avi`, `mov`,
@@ -217,12 +277,6 @@ Streams the original file bytes ("direct play").
   - extras directories (`Extras`, `Featurettes`, `Trailers`,
     `Behind The Scenes`, `Deleted Scenes`, `Interviews`, `Scenes`, `Shorts`,
     `Other`, `Samples`).
-- Title and year are parsed from the file name. Examples:
-  - `Title (Year)`;
-  - `Title.Year.1080p...`;
-  - a parent directory named `Title (Year)` when the file name has no year.
-- Files with the same title and year in one section become one item with
-  several Media entries (versions).
 - IDs (`ratingKey`, media `id`, part `id`) are kept across rescans for
   unchanged file paths.
 - Files are probed with `ffprobe` when they are new, or when their size or
@@ -230,3 +284,49 @@ Streams the original file bytes ("direct play").
 - If a configured root path is missing or unreadable, the scan aborts and the
   section's existing items stay as they are. This keeps an unmounted drive
   from wiping the library.
+
+### Movie sections
+
+- Title and year are parsed from the file name. Examples:
+  - `Title (Year)`;
+  - `Title.Year.1080p...`;
+  - a parent directory named `Title (Year)` when the file name has no year.
+- Files with the same title and year in one section become one item with
+  several Media entries (versions).
+
+### Show sections
+
+The expected layout is `<root>/<Show Name (Year)>/<Season NN>/<file>`. The
+season folder is optional.
+
+Season and episode numbers come from the file name, tried in this order:
+
+1. `S01E02`, case-insensitive, with optional separators between the parts.
+   Multi-episode forms such as `S01E01E02` and `S01E01-E02` are accepted;
+   only the first episode number is used.
+2. `1x02`.
+3. Only when the file sits in a season folder: an `E02`, `Ep02`, or
+   `Episode 2` token, or a leading number such as `02 - Title`.
+
+The folder rules are:
+
+- A season folder is named `Season N`, `Series N`, or `SN`. A folder named
+  `Specials` is season 0.
+- The show title and year come from the top-level folder under the root,
+  parsed like a movie name. If the file sits directly in the root, they come
+  from the file name text before the episode marker.
+
+Other rules:
+
+- The episode title is the file name text after the episode marker, cut at
+  the first release tag (`720p`, `WEB-DL`, and so on). It falls back to
+  `Episode N`.
+- Files with no recognisable episode number are skipped.
+- Within a section, shows are matched by title and year. Seasons are matched
+  by show and season number. Episodes are matched by show, season, and
+  episode number.
+- Files that resolve to the same episode become versions (several Media
+  entries) of that episode.
+- Show and season IDs are kept across rescans while their title, year, or
+  index stays the same.
+- Date-based episodes, such as `Show 2024-01-15`, are **not supported yet**.

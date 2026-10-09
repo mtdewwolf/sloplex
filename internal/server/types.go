@@ -17,6 +17,7 @@ type MediaContainer struct {
 	Offset    *int `xml:"offset,attr,omitempty" json:"offset,omitempty"`
 
 	Title1              string `xml:"title1,attr,omitempty" json:"title1,omitempty"`
+	Title2              string `xml:"title2,attr,omitempty" json:"title2,omitempty"`
 	LibrarySectionID    int    `xml:"librarySectionID,attr,omitempty" json:"librarySectionID,omitempty"`
 	LibrarySectionTitle string `xml:"librarySectionTitle,attr,omitempty" json:"librarySectionTitle,omitempty"`
 	ViewGroup           string `xml:"viewGroup,attr,omitempty" json:"viewGroup,omitempty"`
@@ -71,14 +72,27 @@ type Location struct {
 type Metadata struct {
 	XMLName xml.Name `json:"-"`
 
-	RatingKey           string  `xml:"ratingKey,attr" json:"ratingKey"`
-	Key                 string  `xml:"key,attr" json:"key"`
-	GUID                string  `xml:"guid,attr" json:"guid"`
-	Type                string  `xml:"type,attr" json:"type"`
-	Title               string  `xml:"title,attr" json:"title"`
-	TitleSort           string  `xml:"titleSort,attr,omitempty" json:"titleSort,omitempty"`
-	Year                int     `xml:"year,attr,omitempty" json:"year,omitempty"`
-	Duration            int64   `xml:"duration,attr,omitempty" json:"duration,omitempty"`
+	RatingKey string `xml:"ratingKey,attr" json:"ratingKey"`
+	Key       string `xml:"key,attr" json:"key"`
+	GUID      string `xml:"guid,attr" json:"guid"`
+	Type      string `xml:"type,attr" json:"type"`
+	Title     string `xml:"title,attr" json:"title"`
+	TitleSort string `xml:"titleSort,attr,omitempty" json:"titleSort,omitempty"`
+	Year      int    `xml:"year,attr,omitempty" json:"year,omitempty"`
+	// Index is the season or episode number; always set for those types.
+	Index       *int  `xml:"index,attr,omitempty" json:"index,omitempty"`
+	ParentIndex *int  `xml:"parentIndex,attr,omitempty" json:"parentIndex,omitempty"`
+	Duration    int64 `xml:"duration,attr,omitempty" json:"duration,omitempty"`
+	ChildCount  int   `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
+	LeafCount   int   `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
+
+	ParentRatingKey      string `xml:"parentRatingKey,attr,omitempty" json:"parentRatingKey,omitempty"`
+	ParentKey            string `xml:"parentKey,attr,omitempty" json:"parentKey,omitempty"`
+	ParentTitle          string `xml:"parentTitle,attr,omitempty" json:"parentTitle,omitempty"`
+	GrandparentRatingKey string `xml:"grandparentRatingKey,attr,omitempty" json:"grandparentRatingKey,omitempty"`
+	GrandparentKey       string `xml:"grandparentKey,attr,omitempty" json:"grandparentKey,omitempty"`
+	GrandparentTitle     string `xml:"grandparentTitle,attr,omitempty" json:"grandparentTitle,omitempty"`
+
 	AddedAt             int64   `xml:"addedAt,attr" json:"addedAt"`
 	UpdatedAt           int64   `xml:"updatedAt,attr" json:"updatedAt"`
 	LibrarySectionID    int     `xml:"librarySectionID,attr" json:"librarySectionID"`

@@ -144,7 +144,9 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 			sc.log.Warn("skipping file", "path", path, "err", err)
 			return nil
 		}
-		files = append(files, sc.scanFile(ctx, sec.ID, path, info))
+		if f, ok := sc.scanFile(ctx, sec, root, path, info); ok {
+			files = append(files, f)
+		}
 		return nil
 	})
 	if err != nil {
@@ -153,13 +155,27 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 	return files, nil
 }
 
-func (sc *Scanner) scanFile(ctx context.Context, sectionID int, path string, fi fs.FileInfo) ScannedFile {
-	title, year := ParseMovie(path)
-	f := ScannedFile{Path: path, Size: fi.Size(), ModTime: fi.ModTime().Unix(), Title: title, Year: year}
+// scanFile names and probes one video file. ok is false if the file does not
+// fit the section's naming rules.
+func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string, fi fs.FileInfo) (f ScannedFile, ok bool) {
+	f = ScannedFile{Path: path, Size: fi.Size(), ModTime: fi.ModTime().Unix()}
+	switch sec.Type {
+	case TypeMovie:
+		f.Title, f.Year = ParseMovie(path)
+	case TypeShow:
+		ep, ok := ParseEpisode(root, path)
+		if !ok {
+			sc.log.Debug("skipping file without episode number", "path", path)
+			return ScannedFile{}, false
+		}
+		f.Show, f.ShowYear, f.Season, f.Episode, f.Title = ep.Show, ep.ShowYear, ep.Season, ep.Episode, ep.Title
+	default:
+		return ScannedFile{}, false
+	}
 
-	if size, mod, info, ok := sc.store.KnownFile(sectionID, path); ok && size == f.Size && mod == f.ModTime {
+	if size, mod, info, known := sc.store.KnownFile(sec.ID, path); known && size == f.Size && mod == f.ModTime {
 		f.Info = info
-		return f
+		return f, true
 	}
 	f.Changed = true
 	info, err := sc.prober.Probe(ctx, path)
@@ -170,5 +186,5 @@ func (sc *Scanner) scanFile(ctx context.Context, sectionID int, path string, fi 
 		info.Container = probe.ContainerForPath(path)
 	}
 	f.Info = info
-	return f
+	return f, true
 }

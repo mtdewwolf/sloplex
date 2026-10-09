@@ -13,7 +13,7 @@ Sloplex is a standalone product:
 > "Plex" is a trademark of its owner. The name is used here only to describe
 > protocol compatibility.
 
-## Status: milestone 1 (discoverable and browsable)
+## Status
 
 | Area                               | State                                    |
 |------------------------------------|------------------------------------------|
@@ -21,9 +21,11 @@ Sloplex is a standalone product:
 | GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`                    |
 | Local token auth, trusted CIDRs    | ✅                                       |
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
+| TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
 | Direct play (byte-range streaming) | ✅                                       |
-| TV shows, music                    | ⏳ next                                  |
+| Date-based TV episodes             | ⏳                                       |
+| Music                              | ⏳                                       |
 | Artwork, external metadata agents  | ⏳                                       |
 | Transcoding (HLS/DASH)             | ⏳                                       |
 | Watch state, users                 | ⏳                                       |
@@ -50,6 +52,10 @@ curl -H "X-Plex-Token: $TOKEN" localhost:32400/library/sections
 curl -H "X-Plex-Token: $TOKEN" -H "Accept: application/json" localhost:32400/library/sections/1/all
 ```
 
+TV libraries expect `<root>/<Show Name (Year)>/Season NN/<file with S01E02>`.
+See "Show sections" in [docs/spec/http-api.md](docs/spec/http-api.md) for the
+full naming rules.
+
 Install `ffprobe` (part of ffmpeg) to get duration, codec, and resolution
 details. Without it, Sloplex reports only the container.
 
@@ -64,7 +70,7 @@ details. Without it, Sloplex reports only the container.
 | `tokens`          | `[]`           | Extra accepted tokens                                     |
 | `allowedNetworks` | `[]`           | CIDRs that skip token auth                                |
 | `ffprobe`         | `""`           | ffprobe path; `""` searches `PATH`, `"-"` disables probing |
-| `libraries`       | `[]`           | `{title, type: "movie", paths: [...]}`                    |
+| `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout
 

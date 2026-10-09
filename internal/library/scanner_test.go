@@ -114,3 +114,33 @@ func TestScanMissingRootKeepsItems(t *testing.T) {
 		t.Errorf("items after failed scan = %d, want 1", n)
 	}
 }
+
+func TestScanShows(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Lost (2004)", "Season 01", "Lost - S01E01 - Pilot.mkv"), "x")
+	writeFile(t, filepath.Join(root, "Lost (2004)", "Season 01", "Lost - S01E02.mkv"), "x")
+	writeFile(t, filepath.Join(root, "Lost (2004)", "Season 01", "Lost - S01E02 - sample.mkv"), "x")
+	writeFile(t, filepath.Join(root, "Lost (2004)", "Featurettes", "Lost - S01E01 - Making Of.mkv"), "x")
+	writeFile(t, filepath.Join(root, "Lost (2004)", "Season 01", "behind the camera.mkv"), "x")
+
+	s, _ := Open("")
+	if err := s.SyncSections([]SectionDef{{Title: "TV", Type: TypeShow, Paths: []string{root}}}, t0); err != nil {
+		t.Fatal(err)
+	}
+	sec := s.Sections()[0].ID
+	stats, err := NewScanner(s, &countingProber{}, nil).Scan(context.Background(), sec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Files != 2 || stats.Added != 2 {
+		t.Fatalf("stats = %+v, want 2 episodes", stats)
+	}
+	shows := s.Items(sec, TypeShow)
+	if len(shows) != 1 || shows[0].Title != "Lost" || shows[0].Year != 2004 {
+		t.Fatalf("shows = %+v", shows)
+	}
+	eps := s.Leaves(shows[0].ID)
+	if len(eps) != 2 || eps[0].Title != "Pilot" || eps[1].Title != "Episode 2" || eps[0].Media[0].Duration != 5000 {
+		t.Errorf("episodes = %+v", eps)
+	}
+}

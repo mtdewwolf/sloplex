@@ -32,12 +32,18 @@ func ParseMovie(path string) (title string, year int) {
 	return title, year
 }
 
-func parseName(s string) (string, int) {
+// normalize turns dot- or underscore-separated release names into spaced
+// text. Dots are kept when the name already contains spaces ("Mr. Smith").
+func normalize(s string) string {
 	if !strings.Contains(s, " ") {
 		s = strings.ReplaceAll(s, ".", " ")
 	}
 	s = strings.ReplaceAll(s, "_", " ")
-	s = spaceRE.ReplaceAllString(strings.TrimSpace(s), " ")
+	return spaceRE.ReplaceAllString(strings.TrimSpace(s), " ")
+}
+
+func parseName(s string) (string, int) {
+	s = normalize(s)
 
 	// Take the last year that is not at the very start, so that titles like
 	// "2001 A Space Odyssey (1968)" and "1917 (2019)" parse correctly.

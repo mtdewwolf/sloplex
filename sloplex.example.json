@@ -5,6 +5,7 @@
   "discovery": true,
   "allowedNetworks": [],
   "libraries": [
-    { "title": "Movies", "type": "movie", "paths": ["/srv/media/movies"] }
+    { "title": "Movies", "type": "movie", "paths": ["/srv/media/movies"] },
+    { "title": "TV Shows", "type": "show", "paths": ["/srv/media/tv"] }
   ]
 }

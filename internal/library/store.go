@@ -13,16 +13,24 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/mtdewwolf/sloplex/internal/probe"
 )
 
-// TypeMovie is the library and item type for movies.
-const TypeMovie = "movie"
+// Section and item types.
+const (
+	TypeMovie   = "movie"
+	TypeShow    = "show"
+	TypeSeason  = "season"
+	TypeEpisode = "episode"
+)
+
+// IsLeaf reports whether items of the given type carry media.
+func IsLeaf(itemType string) bool {
+	return itemType == TypeMovie || itemType == TypeEpisode
+}
 
 // Section is one library section, such as "Movies".
 type Section struct {
@@ -36,17 +44,22 @@ type Section struct {
 	ScannedAt int64    `json:"scannedAt,omitempty"`
 }
 
-// Item is one playable title, such as a movie. It may have several Media
-// versions.
+// Item is a movie, show, season or episode. Leaf items (movies, episodes)
+// have one or more Media versions; shows and seasons have children instead.
 type Item struct {
-	ID        int     `json:"id"`
-	SectionID int     `json:"sectionId"`
-	Type      string  `json:"type"`
+	ID        int    `json:"id"`
+	SectionID int    `json:"sectionId"`
+	Type      string `json:"type"`
+	// ParentID is the show of a season, or the season of an episode.
+	ParentID int `json:"parentId,omitempty"`
+	// Index is the season number of a season or the episode number of an
+	// episode.
+	Index     int     `json:"index,omitempty"`
 	Title     string  `json:"title"`
 	Year      int     `json:"year,omitempty"`
 	AddedAt   int64   `json:"addedAt"`
 	UpdatedAt int64   `json:"updatedAt"`
-	Media     []Media `json:"media"`
+	Media     []Media `json:"media,omitempty"`
 }
 
 // Media is one version of an item.
@@ -78,14 +91,20 @@ type ScannedFile struct {
 	Path    string
 	Size    int64
 	ModTime int64
-	Title   string
-	Year    int
-	Info    probe.Info
+	// Title and Year describe a movie, or Title the episode title.
+	Title string
+	Year  int
+	// Show, ShowYear, Season and Episode are set for episodes.
+	Show     string
+	ShowYear int
+	Season   int
+	Episode  int
+	Info     probe.Info
 	// Changed is set when the file is new or was modified since the last scan.
 	Changed bool
 }
 
-// ScanStats summarises the effect of a scan.
+// ScanStats summarises the effect of a scan on leaf items.
 type ScanStats struct {
 	Files, Added, Updated, Removed int
 }
@@ -105,6 +124,12 @@ type storeData struct {
 	Items         []*Item    `json:"items"`
 }
 
+type fileRef struct {
+	item  *Item
+	media *Media
+	part  *Part
+}
+
 // Store is the library database. It is kept in memory and saved as JSON
 // after every change. All methods are safe for concurrent use and return
 // copies.
@@ -112,6 +137,17 @@ type Store struct {
 	mu   sync.RWMutex
 	path string
 	d    storeData
+
+	// Indexes, rebuilt by reindexLocked after every change.
+	byID     map[int]*Item
+	children map[int][]*Item // ordered by Index, then ID
+	parts    map[int]fileRef
+	files    map[fileKey]fileRef
+}
+
+type fileKey struct {
+	section int
+	path    string
 }
 
 // Open loads the store from path. A missing file yields an empty store; an
@@ -132,7 +168,37 @@ func Open(path string) (*Store, error) {
 			return nil, err
 		}
 	}
+	s.reindexLocked()
 	return s, nil
+}
+
+func (s *Store) reindexLocked() {
+	s.byID = make(map[int]*Item, len(s.d.Items))
+	s.children = map[int][]*Item{}
+	s.parts = map[int]fileRef{}
+	s.files = map[fileKey]fileRef{}
+	for _, it := range s.d.Items {
+		s.byID[it.ID] = it
+		if it.ParentID != 0 {
+			s.children[it.ParentID] = append(s.children[it.ParentID], it)
+		}
+		for mi := range it.Media {
+			m := &it.Media[mi]
+			for pi := range m.Parts {
+				ref := fileRef{it, m, &m.Parts[pi]}
+				s.parts[ref.part.ID] = ref
+				s.files[fileKey{it.SectionID, ref.part.File}] = ref
+			}
+		}
+	}
+	for _, kids := range s.children {
+		sort.Slice(kids, func(i, j int) bool {
+			if kids[i].Index != kids[j].Index {
+				return kids[i].Index < kids[j].Index
+			}
+			return kids[i].ID < kids[j].ID
+		})
+	}
 }
 
 func next(counter *int) int {
@@ -171,6 +237,7 @@ func (s *Store) SyncSections(defs []SectionDef, now time.Time) error {
 	}
 	s.d.Sections = out
 	s.d.Items = slices.DeleteFunc(s.d.Items, func(it *Item) bool { return !keep[it.SectionID] })
+	s.reindexLocked()
 	return s.saveLocked()
 }
 
@@ -204,13 +271,14 @@ func (s *Store) sectionLocked(id int) *Section {
 	return nil
 }
 
-// Items returns the items of a section, or of all sections if sectionID is 0.
-func (s *Store) Items(sectionID int) []Item {
+// Items returns the items of a section (all sections if sectionID is 0)
+// whose type matches one of types (any type if none are given).
+func (s *Store) Items(sectionID int, types ...string) []Item {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Item
 	for _, it := range s.d.Items {
-		if sectionID == 0 || it.SectionID == sectionID {
+		if (sectionID == 0 || it.SectionID == sectionID) && (len(types) == 0 || slices.Contains(types, it.Type)) {
 			out = append(out, it.clone())
 		}
 	}
@@ -221,26 +289,65 @@ func (s *Store) Items(sectionID int) []Item {
 func (s *Store) Item(id int) (Item, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, it := range s.d.Items {
-		if it.ID == id {
-			return it.clone(), nil
-		}
+	if it := s.byID[id]; it != nil {
+		return it.clone(), nil
 	}
 	return Item{}, ErrNotFound
+}
+
+// Children returns the direct children of an item, ordered by index.
+func (s *Store) Children(id int) []Item {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneAll(s.children[id])
+}
+
+// Leaves returns all leaf descendants of an item in hierarchy order: a
+// show's episodes by season and episode number, or a season's episodes.
+func (s *Store) Leaves(id int) []Item {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var out []Item
+	var walk func(id int)
+	walk = func(id int) {
+		for _, c := range s.children[id] {
+			if IsLeaf(c.Type) {
+				out = append(out, c.clone())
+			} else {
+				walk(c.ID)
+			}
+		}
+	}
+	walk(id)
+	return out
+}
+
+// Counts returns the number of direct children and of leaf descendants of an
+// item.
+func (s *Store) Counts(id int) (children, leaves int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var walk func(id int) int
+	walk = func(id int) int {
+		n := 0
+		for _, c := range s.children[id] {
+			if IsLeaf(c.Type) {
+				n++
+			} else {
+				n += walk(c.ID)
+			}
+		}
+		return n
+	}
+	return len(s.children[id]), walk(id)
 }
 
 // Part returns the part with the given ID.
 func (s *Store) Part(id int) (Part, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, it := range s.d.Items {
-		for _, m := range it.Media {
-			for _, p := range m.Parts {
-				if p.ID == id {
-					return p, nil
-				}
-			}
-		}
+	if ref, ok := s.parts[id]; ok {
+		return *ref.part, nil
 	}
 	return Part{}, ErrNotFound
 }
@@ -250,30 +357,15 @@ func (s *Store) Part(id int) (Part, error) {
 func (s *Store) KnownFile(sectionID int, path string) (size, modTime int64, info probe.Info, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, it := range s.d.Items {
-		if it.SectionID != sectionID {
-			continue
-		}
-		for _, m := range it.Media {
-			for _, p := range m.Parts {
-				if p.File == path {
-					return p.Size, p.ModTime, m.Info, true
-				}
-			}
-		}
+	if ref, ok := s.files[fileKey{sectionID, path}]; ok {
+		return ref.part.Size, ref.part.ModTime, ref.media.Info, true
 	}
 	return 0, 0, probe.Info{}, false
 }
 
-type prevPart struct {
-	item  *Item
-	media Media
-	part  Part
-}
-
-// ApplyScan replaces the contents of a section with the scanned files.
-// Files with the same title and year become one item. Item, media and part
-// IDs are kept for file paths that were already known.
+// ApplyScan replaces the contents of a section with the scanned files,
+// keeping item, media and part IDs for what was already known. See the
+// scanning rules in docs/spec/http-api.md.
 func (s *Store) ApplyScan(sectionID int, files []ScannedFile, now time.Time) (ScanStats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -282,92 +374,19 @@ func (s *Store) ApplyScan(sectionID int, files []ScannedFile, now time.Time) (Sc
 	if sec == nil {
 		return ScanStats{}, ErrNotFound
 	}
-	ts := now.Unix()
-
-	prev := map[string]prevPart{}
-	var others, old []*Item
-	for _, it := range s.d.Items {
-		if it.SectionID != sectionID {
-			others = append(others, it)
-			continue
-		}
-		old = append(old, it)
-		for _, m := range it.Media {
-			for _, p := range m.Parts {
-				prev[p.File] = prevPart{it, m, p}
-			}
-		}
+	a := newApplier(s, sec, now)
+	switch sec.Type {
+	case TypeMovie:
+		a.movies(files)
+	case TypeShow:
+		a.shows(files)
+	default:
+		return ScanStats{}, fmt.Errorf("section %q: unsupported type %q", sec.Title, sec.Type)
 	}
-
-	groups := map[string][]ScannedFile{}
-	for _, f := range files {
-		k := strings.ToLower(f.Title) + "\x00" + strconv.Itoa(f.Year)
-		groups[k] = append(groups[k], f)
-	}
-	keys := make([]string, 0, len(groups))
-	for k := range groups {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	stats := ScanStats{Files: len(files)}
-	claimed := map[int]bool{}
-	items := make([]*Item, 0, len(keys))
-	for _, k := range keys {
-		group := groups[k]
-		sort.Slice(group, func(i, j int) bool { return group[i].Path < group[j].Path })
-
-		var base *Item
-		for _, f := range group {
-			if p, ok := prev[f.Path]; ok && !claimed[p.item.ID] {
-				base = p.item
-				break
-			}
-		}
-		it := &Item{SectionID: sectionID, Type: sec.Type, Title: group[0].Title, Year: group[0].Year}
-		changed := false
-		if base != nil {
-			claimed[base.ID] = true
-			it.ID, it.AddedAt, it.UpdatedAt = base.ID, base.AddedAt, base.UpdatedAt
-		} else {
-			it.ID, it.AddedAt = next(&s.d.NextItemID), ts
-			stats.Added++
-		}
-
-		for _, f := range group {
-			m := Media{Info: f.Info}
-			pt := Part{File: f.Path, Size: f.Size, ModTime: f.ModTime, Duration: f.Info.Duration, Container: f.Info.Container}
-			if p, ok := prev[f.Path]; ok {
-				m.ID, pt.ID = p.media.ID, p.part.ID
-				changed = changed || p.item.ID != it.ID
-			} else {
-				m.ID, pt.ID = next(&s.d.NextMediaID), next(&s.d.NextPartID)
-				changed = true
-			}
-			changed = changed || f.Changed
-			m.Parts = []Part{pt}
-			it.Media = append(it.Media, m)
-		}
-		if base != nil {
-			changed = changed || len(base.Media) != len(it.Media) || base.Title != it.Title || base.Year != it.Year
-			if changed {
-				stats.Updated++
-			}
-		}
-		if changed {
-			it.UpdatedAt = ts
-		}
-		items = append(items, it)
-	}
-	for _, it := range old {
-		if !claimed[it.ID] {
-			stats.Removed++
-		}
-	}
-
-	s.d.Items = append(others, items...)
-	sec.ScannedAt = ts
-	return stats, s.saveLocked()
+	a.finish()
+	sec.ScannedAt = now.Unix()
+	s.reindexLocked()
+	return a.stats, s.saveLocked()
 }
 
 func (s *Store) saveLocked() error {
@@ -404,12 +423,22 @@ func (sec *Section) clone() Section {
 
 func (it *Item) clone() Item {
 	c := *it
-	c.Media = make([]Media, len(it.Media))
-	for i, m := range it.Media {
-		m.Parts = slices.Clone(m.Parts)
-		c.Media[i] = m
+	if it.Media != nil {
+		c.Media = make([]Media, len(it.Media))
+		for i, m := range it.Media {
+			m.Parts = slices.Clone(m.Parts)
+			c.Media[i] = m
+		}
 	}
 	return c
+}
+
+func cloneAll(items []*Item) []Item {
+	out := make([]Item, len(items))
+	for i, it := range items {
+		out[i] = it.clone()
+	}
+	return out
 }
 
 func newUUID() string {

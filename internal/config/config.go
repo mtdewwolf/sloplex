@@ -35,7 +35,7 @@ type Config struct {
 }
 
 // SupportedTypes lists the library types the server can scan.
-var SupportedTypes = map[string]bool{"movie": true}
+var SupportedTypes = map[string]bool{"movie": true, "show": true}
 
 // Default returns the configuration used when no file is given.
 func Default() Config {
