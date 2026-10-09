@@ -1,0 +1,116 @@
+package library
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/mtdewwolf/sloplex/internal/probe"
+)
+
+type countingProber struct {
+	mu    sync.Mutex
+	calls map[string]int
+}
+
+func (c *countingProber) Probe(_ context.Context, path string) (probe.Info, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.calls == nil {
+		c.calls = map[string]int{}
+	}
+	c.calls[path]++
+	return probe.Info{Container: probe.ContainerForPath(path), Duration: 5000, Width: 1920, Height: 1080}, nil
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScan(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "The Matrix (1999).mkv"), "x")
+	writeFile(t, filepath.Join(root, "Heat (1995)", "heat.mp4"), "x")
+	writeFile(t, filepath.Join(root, "Heat (1995)", "Extras", "Making Of.mkv"), "x")
+	writeFile(t, filepath.Join(root, "Heat (1995)", "heat-trailer.mp4"), "x")
+	writeFile(t, filepath.Join(root, "Alien.1979.sample.mkv"), "x")
+	writeFile(t, filepath.Join(root, ".hidden", "Ghost (2000).mkv"), "x")
+	writeFile(t, filepath.Join(root, "notes.txt"), "x")
+
+	s, err := Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncSections([]SectionDef{{Title: "Movies", Type: TypeMovie, Paths: []string{root}}}, t0); err != nil {
+		t.Fatal(err)
+	}
+	sec := s.Sections()[0].ID
+	pr := &countingProber{}
+	sc := NewScanner(s, pr, nil)
+
+	stats, err := sc.Scan(context.Background(), sec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Files != 2 || stats.Added != 2 {
+		t.Fatalf("stats = %+v, want 2 files added", stats)
+	}
+	titles := map[string]int{}
+	for _, it := range s.Items(sec) {
+		titles[it.Title] = it.Year
+		if it.Media[0].Duration != 5000 || it.Media[0].Container == "" {
+			t.Errorf("%s: media info not stored: %+v", it.Title, it.Media[0])
+		}
+	}
+	if titles["The Matrix"] != 1999 || titles["Heat"] != 1995 {
+		t.Errorf("titles = %v", titles)
+	}
+
+	// Unchanged files are not re-probed; modified files are.
+	modified := filepath.Join(root, "The Matrix (1999).mkv")
+	writeFile(t, modified, "longer content")
+	if err := os.Chtimes(modified, time.Now(), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sc.Scan(context.Background(), sec); err != nil {
+		t.Fatal(err)
+	}
+	if n := pr.calls[filepath.Join(root, "Heat (1995)", "heat.mp4")]; n != 1 {
+		t.Errorf("unchanged file probed %d times, want 1", n)
+	}
+	if n := pr.calls[modified]; n != 2 {
+		t.Errorf("modified file probed %d times, want 2", n)
+	}
+}
+
+func TestScanMissingRootKeepsItems(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "Heat (1995).mkv"), "x")
+	s, _ := Open("")
+	if err := s.SyncSections([]SectionDef{{Title: "Movies", Type: TypeMovie, Paths: []string{root}}}, t0); err != nil {
+		t.Fatal(err)
+	}
+	sec := s.Sections()[0].ID
+	sc := NewScanner(s, nil, nil)
+	if _, err := sc.Scan(context.Background(), sec); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sc.Scan(context.Background(), sec); err == nil {
+		t.Fatal("scan of missing root succeeded")
+	}
+	if n := len(s.Items(sec)); n != 1 {
+		t.Errorf("items after failed scan = %d, want 1", n)
+	}
+}

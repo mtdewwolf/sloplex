@@ -1,0 +1,5 @@
+/sloplex
+/data/
+/sloplex.json
+*.test
+*.out

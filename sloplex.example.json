@@ -1,0 +1,10 @@
+{
+  "friendlyName": "Living Room",
+  "listen": ":32400",
+  "dataDir": "data",
+  "discovery": true,
+  "allowedNetworks": [],
+  "libraries": [
+    { "title": "Movies", "type": "movie", "paths": ["/srv/media/movies"] }
+  ]
+}
