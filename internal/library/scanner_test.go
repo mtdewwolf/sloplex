@@ -178,3 +178,73 @@ func TestScanDateShows(t *testing.T) {
 		t.Errorf("seasons and episodes =\n%s\nwant\n%s", strings.Join(got, "|"), want)
 	}
 }
+
+func TestScanNFO(t *testing.T) {
+	root := t.TempDir()
+	movies, tv := filepath.Join(root, "movies"), filepath.Join(root, "tv")
+	// Heat: movie.nfo applies; Ronin: its own .nfo beats movie.nfo.
+	writeFile(t, filepath.Join(movies, "Heat (1995)", "heat.mkv"), "x")
+	writeFile(t, filepath.Join(movies, "Heat (1995)", "MOVIE.NFO"), `<movie><title>Heat</title><sorttitle>Zzz</sorttitle><plot>Bank robbers.</plot></movie>`)
+	writeFile(t, filepath.Join(movies, "Ronin (1998)", "Ronin (1998).mkv"), "x")
+	writeFile(t, filepath.Join(movies, "Ronin (1998)", "Ronin (1998).nfo"), `<movie><title>Ronin</title><year>1998</year><genre>Action</genre></movie>`)
+	writeFile(t, filepath.Join(movies, "Ronin (1998)", "movie.nfo"), `<movie><title>Wrong</title></movie>`)
+	// A broken .nfo is ignored.
+	writeFile(t, filepath.Join(movies, "Alien.1979.mkv"), "x")
+	writeFile(t, filepath.Join(movies, "Alien.1979.nfo"), "https://www.imdb.com/title/tt0078748/")
+	// Show .nfo at the show folder, found from inside the season folder.
+	writeFile(t, filepath.Join(tv, "lost", "Season 01", "Lost - S01E01.mkv"), "x")
+	writeFile(t, filepath.Join(tv, "lost", "Season 01", "Lost - S01E01.nfo"), `<episodedetails><title>Pilot (1)</title><aired>2004-09-22</aired><season>7</season></episodedetails>`)
+	writeFile(t, filepath.Join(tv, "lost", "tvshow.nfo"), `<tvshow><title>LOST</title><year>2004</year><plot>Survivors.</plot></tvshow>`)
+
+	s, _ := Open("")
+	if err := s.SyncSections([]SectionDef{
+		{Title: "Movies", Type: TypeMovie, Paths: []string{movies}},
+		{Title: "TV", Type: TypeShow, Paths: []string{tv}},
+	}, t0); err != nil {
+		t.Fatal(err)
+	}
+	sc := NewScanner(s, &countingProber{}, nil)
+	for _, sec := range s.Sections() {
+		if _, err := sc.Scan(context.Background(), sec.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	byTitle := map[string]Item{}
+	for _, it := range s.Items(s.Sections()[0].ID, TypeMovie) {
+		byTitle[it.Title] = it
+	}
+	if heat := byTitle["Heat"]; heat.Meta == nil || heat.Meta.Summary != "Bank robbers." || heat.SortKey() != "zzz" {
+		t.Errorf("Heat = %+v", heat)
+	}
+	if ronin := byTitle["Ronin"]; ronin.Meta == nil || ronin.Meta.Genres[0] != "Action" {
+		t.Errorf("Ronin = %+v", ronin)
+	}
+	if alien, ok := byTitle["Alien"]; !ok || alien.Meta != nil {
+		t.Errorf("Alien = %+v (titles %v)", alien, byTitle)
+	}
+
+	shows := s.Items(s.Sections()[1].ID, TypeShow)
+	if len(shows) != 1 || shows[0].Title != "LOST" || shows[0].Year != 2004 || shows[0].Meta.Summary != "Survivors." {
+		t.Fatalf("shows = %+v", shows)
+	}
+	eps := s.Leaves(shows[0].ID)
+	if len(eps) != 1 || eps[0].Title != "Pilot (1)" || eps[0].Aired != "2004-09-22" || eps[0].Index != 1 {
+		t.Errorf("episodes = %+v", eps)
+	}
+
+	// Editing a .nfo updates the item at the next scan.
+	before := byTitle["Ronin"].UpdatedAt
+	sc.now = func() time.Time { return t0.Add(time.Hour) }
+	writeFile(t, filepath.Join(movies, "Ronin (1998)", "Ronin (1998).nfo"), `<movie><title>Ronin</title><genre>Thriller</genre></movie>`)
+	if _, err := sc.Scan(context.Background(), s.Sections()[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range s.Items(s.Sections()[0].ID, TypeMovie) {
+		if it.Title == "Ronin" && (it.UpdatedAt == before || it.Meta.Genres[0] != "Thriller") {
+			t.Errorf("after editing the nfo: %+v", it)
+		}
+		if it.Title == "Heat" && it.UpdatedAt != byTitle["Heat"].UpdatedAt {
+			t.Errorf("unchanged Heat was updated")
+		}
+	}
+}

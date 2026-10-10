@@ -33,7 +33,7 @@ Sloplex is a standalone product:
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
 | Date-based TV episodes             | ✅ `Show - 2024-03-15.mkv`, seasons by year |
 | Music                              | ⏳                                       |
-| External metadata agents           | ⏳                                       |
+| Local metadata (`.nfo`)            | ✅ summaries, ratings, genres, cast, sort titles; read from files, never fetched online |
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
@@ -146,6 +146,13 @@ When transcoding:
   renditions, so HLS players can switch subtitles on their own.
 
 See [docs/spec/streams.md](docs/spec/streams.md).
+
+Summaries, ratings, genres, cast, and better titles come from Kodi-style
+`.nfo` files next to your media: `<video name>.nfo` or `movie.nfo` for a
+movie, `tvshow.nfo` in a show's folder, and `<episode name>.nfo` for an
+episode. Tools such as tinyMediaManager can write them for you. Sloplex
+never looks anything up online. See
+[docs/spec/metadata.md](docs/spec/metadata.md).
 
 Artwork comes from image files next to your media, such as `poster.jpg`,
 `fanart.jpg`, `banner.jpg`, `season01-poster.jpg`, and `<episode>-thumb.jpg`.

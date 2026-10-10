@@ -123,8 +123,16 @@ type Metadata struct {
 	Duration    int64 `xml:"duration,attr,omitempty" json:"duration,omitempty"`
 	// OriginallyAvailableAt is an air or release date, YYYY-MM-DD.
 	OriginallyAvailableAt string `xml:"originallyAvailableAt,attr,omitempty" json:"originallyAvailableAt,omitempty"`
-	ChildCount            int    `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
-	LeafCount             int    `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
+
+	// Local .nfo metadata; see docs/spec/metadata.md.
+	OriginalTitle string  `xml:"originalTitle,attr,omitempty" json:"originalTitle,omitempty"`
+	Summary       string  `xml:"summary,attr,omitempty" json:"summary,omitempty"`
+	Tagline       string  `xml:"tagline,attr,omitempty" json:"tagline,omitempty"`
+	ContentRating string  `xml:"contentRating,attr,omitempty" json:"contentRating,omitempty"`
+	Rating        float64 `xml:"rating,attr,omitempty" json:"rating,omitempty"`
+	Studio        string  `xml:"studio,attr,omitempty" json:"studio,omitempty"`
+	ChildCount    int     `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
+	LeafCount     int     `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
 
 	// Artwork; see docs/spec/artwork.md.
 	Thumb            string `xml:"thumb,attr,omitempty" json:"thumb,omitempty"`
@@ -153,6 +161,28 @@ type Metadata struct {
 	LibrarySectionKey   string  `xml:"librarySectionKey,attr" json:"librarySectionKey"`
 	LibrarySectionTitle string  `xml:"librarySectionTitle,attr" json:"librarySectionTitle"`
 	Media               []Media `xml:"Media" json:"Media,omitempty"`
+
+	Genre      []Tag `xml:"Genre" json:"Genre,omitempty"`
+	Director   []Tag `xml:"Director" json:"Director,omitempty"`
+	Writer     []Tag `xml:"Writer" json:"Writer,omitempty"`
+	Country    []Tag `xml:"Country" json:"Country,omitempty"`
+	Role       []Tag `xml:"Role" json:"Role,omitempty"`
+	Collection []Tag `xml:"Collection" json:"Collection,omitempty"`
+}
+
+// Tag is a genre, person, country or collection attached to an item; Role
+// is set for cast members.
+type Tag struct {
+	Tag  string `xml:"tag,attr" json:"tag"`
+	Role string `xml:"role,attr,omitempty" json:"role,omitempty"`
+}
+
+func tags(vals []string) []Tag {
+	var out []Tag
+	for _, v := range vals {
+		out = append(out, Tag{Tag: v})
+	}
+	return out
 }
 
 // xmlName returns the XML element name for an item type.

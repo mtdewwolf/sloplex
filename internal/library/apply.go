@@ -3,6 +3,7 @@ package library
 import (
 	"cmp"
 	"fmt"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -111,7 +112,8 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 	}
 	if base != nil {
 		changed = changed || len(base.Media) != len(it.Media) || base.Title != it.Title ||
-			base.Year != it.Year || base.ParentID != it.ParentID || base.Index != it.Index || base.Aired != it.Aired
+			base.Year != it.Year || base.ParentID != it.ParentID || base.Index != it.Index || base.Aired != it.Aired ||
+			!reflect.DeepEqual(base.Meta, it.Meta)
 		if changed {
 			a.stats.Updated++
 		}
@@ -162,15 +164,49 @@ func (a *applier) container(it *Item, base *Item) bool {
 		return true
 	}
 	it.ID, it.AddedAt, it.UpdatedAt, it.Images = base.ID, base.AddedAt, base.UpdatedAt, base.Images
-	return base.Title != it.Title || base.Year != it.Year
+	return base.Title != it.Title || base.Year != it.Year || base.Aired != it.Aired || !reflect.DeepEqual(base.Meta, it.Meta)
 }
+
+// applyMeta sets an item's .nfo metadata, which overrides the title, year
+// and date from file names; see docs/spec/metadata.md. Episodes keep their
+// year.
+func applyMeta(it *Item, m *Meta) {
+	if m == nil {
+		return
+	}
+	it.Meta = m
+	if m.Title != "" {
+		it.Title = m.Title
+	}
+	if m.Year != 0 && it.Type != TypeEpisode {
+		it.Year = m.Year
+	}
+	if m.Date != "" {
+		it.Aired = m.Date
+	}
+}
+
+// firstMeta returns the first metadata pick finds among a group's files.
+func firstMeta(group []ScannedFile, pick func(ScannedFile) *Meta) *Meta {
+	for _, f := range group {
+		if m := pick(f); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
+func fileNFO(f ScannedFile) *Meta { return f.NFO }
+func showNFO(f ScannedFile) *Meta { return f.ShowNFO }
 
 func (a *applier) movies(files []ScannedFile) {
 	a.stats.Files = len(files)
 	keys, groups := groupBy(files, func(f ScannedFile) string { return titleKey(f.Title, f.Year) })
 	for _, k := range keys {
 		g := groups[k]
-		a.leaf(&Item{SectionID: a.sec.ID, Type: TypeMovie, Title: g[0].Title, Year: g[0].Year}, g)
+		it := &Item{SectionID: a.sec.ID, Type: TypeMovie, Title: g[0].Title, Year: g[0].Year}
+		applyMeta(it, firstMeta(g, fileNFO))
+		a.leaf(it, g)
 	}
 }
 
@@ -197,6 +233,7 @@ func (a *applier) shows(files []ScannedFile) {
 	for _, sk := range showKeys {
 		sf := shows[sk]
 		show := &Item{SectionID: a.sec.ID, Type: TypeShow, Title: sf[0].Show, Year: sf[0].ShowYear}
+		applyMeta(show, firstMeta(sf, showNFO))
 		showChanged := a.container(show, oldShows[sk])
 
 		seasonNums, seasons := groupBy(sf, func(f ScannedFile) int { return f.Season })
@@ -224,6 +261,7 @@ func (a *applier) shows(files []ScannedFile) {
 					title = fmt.Sprintf("Episode %d", e)
 				}
 				ep := &Item{SectionID: a.sec.ID, Type: TypeEpisode, ParentID: season.ID, Index: e, Title: title, Aired: aired}
+				applyMeta(ep, firstMeta(g, fileNFO))
 				seasonChanged = a.leaf(ep, g) || seasonChanged
 			}
 			if seasonChanged || oldKids[season.ID] != len(epNums) {

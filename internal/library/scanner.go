@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -142,6 +143,7 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 
 	var files []ScannedFile
 	dirs := dirCache{}
+	shows := map[string]*Meta{} // tvshow.nfo by directory
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -173,6 +175,7 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 		}
 		if f, ok := sc.scanFile(ctx, sec, root, path, info); ok {
 			f.Sidecars = findSidecars(dirs, path)
+			f.NFO, f.ShowNFO = sc.nfos(dirs, shows, sec, root, path)
 			files = append(files, f)
 		}
 		return nil
@@ -181,6 +184,41 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 		return nil, fmt.Errorf("section %q: %w", sec.Title, err)
 	}
 	return files, nil
+}
+
+// nfos reads the .nfo metadata of a video and, for episodes, of its show;
+// see docs/spec/metadata.md.
+func (sc *Scanner) nfos(dirs dirCache, shows map[string]*Meta, sec Section, root, path string) (item, show *Meta) {
+	read := func(p, kind string) *Meta {
+		if p == "" {
+			return nil
+		}
+		m, err := ReadNFO(p, kind)
+		if err != nil {
+			sc.log.Debug("ignoring nfo", "path", p, "err", err)
+			return nil
+		}
+		return m
+	}
+	dir, st := filepath.Dir(path), stem(path)
+	switch sec.Type {
+	case TypeMovie:
+		return read(nfoPath(dirs, dir, st+".nfo", "movie.nfo"), NFOMovie), nil
+	case TypeShow:
+		item = read(nfoPath(dirs, dir, st+".nfo"), NFOEpisode)
+		root = filepath.Clean(root)
+		for d := dir; ; d = filepath.Dir(d) {
+			m, ok := shows[d]
+			if !ok {
+				m = read(nfoPath(dirs, d, "tvshow.nfo"), NFOShow)
+				shows[d] = m
+			}
+			if m != nil || d == root || !strings.HasPrefix(d, root) || filepath.Dir(d) == d {
+				return item, m
+			}
+		}
+	}
+	return nil, nil
 }
 
 // scanFile names and probes one video file. ok is false if the file does not

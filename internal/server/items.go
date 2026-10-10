@@ -102,6 +102,11 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	md := s.metadata(it, s.account(r))
 	s.attachStreams(&md, it, s.account(r))
+	if it.Meta != nil {
+		for _, r := range it.Meta.Roles {
+			md.Role = append(md.Role, Tag{Tag: r.Name, Role: r.Role})
+		}
+	}
 	mc := MediaContainer{Metadata: []Metadata{md}}
 	s.setSection(&mc, it.SectionID)
 	writeContainer(w, r, mc)
@@ -203,13 +208,13 @@ func (s *Server) position(it library.Item) position {
 	switch it.Type {
 	case library.TypeSeason:
 		show, _ := s.store.Item(it.ParentID)
-		return position{library.SortTitle(show.Title), show.ID, it.Index, -1}
+		return position{show.SortKey(), show.ID, it.Index, -1}
 	case library.TypeEpisode:
 		season, _ := s.store.Item(it.ParentID)
 		show, _ := s.store.Item(season.ParentID)
-		return position{library.SortTitle(show.Title), show.ID, season.Index, it.Index}
+		return position{show.SortKey(), show.ID, season.Index, it.Index}
 	}
-	return position{library.SortTitle(it.Title), it.ID, -1, -1}
+	return position{it.SortKey(), it.ID, -1, -1}
 }
 
 // sortItems orders items by spec ("field[:asc|:desc]"), using def when the
@@ -239,7 +244,7 @@ func (s *Server) sortItems(items []library.Item, spec, def string) {
 		case "index":
 			return pos[a.ID].compare(pos[b.ID])
 		default:
-			return strings.Compare(library.SortTitle(a.Title), library.SortTitle(b.Title))
+			return strings.Compare(a.SortKey(), b.SortKey())
 		}
 	}
 	desc := dir == "desc"
@@ -274,8 +279,14 @@ func (s *Server) metadata(it library.Item, acct int) Metadata {
 		LibrarySectionID:      it.SectionID,
 		LibrarySectionKey:     fmt.Sprintf("/library/sections/%d", it.SectionID),
 	}
-	if st := library.SortTitle(it.Title); st != strings.ToLower(it.Title) {
+	if st := it.SortKey(); st != strings.ToLower(it.Title) {
 		md.TitleSort = st
+	}
+	if m := it.Meta; m != nil {
+		md.OriginalTitle, md.Summary, md.Tagline, md.ContentRating, md.Rating, md.Studio =
+			m.OriginalTitle, m.Summary, m.Tagline, m.ContentRating, m.Rating, m.Studio
+		md.Genre, md.Director, md.Writer, md.Country, md.Collection =
+			tags(m.Genres), tags(m.Directors), tags(m.Writers), tags(m.Countries), tags(m.Collections)
 	}
 	if sec, err := s.store.Section(it.SectionID); err == nil {
 		md.LibrarySectionTitle = sec.Title

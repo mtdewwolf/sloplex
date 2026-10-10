@@ -240,6 +240,7 @@ async function viewItem(id) {
     const heading = item.type === "season" ? `${item.parentTitle} · ${item.title}` : item.title;
     render(
       el("h1", { text: heading }),
+      item.summary ? el("p", { class: "summary", text: item.summary }) : null,
       el("div", { class: "row" },
         watchButtons(item, () => viewItem(id))),
       el("h2", { text: item.type === "show" ? "Seasons" : "Episodes" }),
@@ -257,6 +258,15 @@ async function viewItem(id) {
     add("Aired", item.originallyAvailableAt);
   }
   add("Year", item.year && String(item.year));
+  if (item.type === "movie") add("Released", item.originallyAvailableAt);
+  add("Rated", item.contentRating);
+  add("Rating", item.rating ? `${item.rating} / 10` : "");
+  const names = (list) => (list || []).map((t) => t.tag).join(", ");
+  add("Genre", names(item.Genre));
+  add("Director", names(item.Director));
+  add("Writer", names(item.Writer));
+  add("Studio", item.studio);
+  add("Collection", names(item.Collection));
   add("Duration", fmtDuration(item.duration));
   const res = { sd: "SD", "4k": "4K" }[media && media.videoResolution] || (media && media.videoResolution ? media.videoResolution + "p" : "");
   if (media) add("Video", [res, media.videoCodec, media.container].filter(Boolean).join(" · "));
@@ -275,7 +285,11 @@ async function viewItem(id) {
       el("div", { class: "art" }, art ? el("img", { src: posterURL(art), alt: "" }) : null),
       el("div", {},
         el("h1", { text: item.title }),
+        item.originalTitle ? el("p", { class: "muted", text: item.originalTitle }) : null,
+        item.tagline ? el("p", { class: "tagline", text: item.tagline }) : null,
+        item.summary ? el("p", { class: "summary", text: item.summary }) : null,
         el("dl", {}, facts),
+        castList(item.Role),
         tracks ? tracks.node : null,
         el("div", { class: "row" },
           part ? el("button", {
@@ -286,6 +300,15 @@ async function viewItem(id) {
           }) : null,
           watchButtons(item, () => viewItem(id))),
         player)));
+}
+
+// castList shows up to 12 cast members and the characters they play.
+function castList(roles) {
+  if (!roles || !roles.length) return null;
+  return el("div", { class: "cast" },
+    el("h2", { text: "Cast" }),
+    el("ul", {}, roles.slice(0, 12).map((r) => el("li", {},
+      el("strong", { text: r.tag }), r.role ? el("span", { class: "muted", text: ` as ${r.role}` }) : null))));
 }
 
 // trackPickers builds the audio and subtitle selects of a part (see

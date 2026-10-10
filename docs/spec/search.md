@@ -35,6 +35,10 @@ characters, or one that folds to nothing, returns `400`.
 | season  | title          | show title                          |
 | episode | title          | show title and season title         |
 
+**(sloplex)** An item with an `originalTitle` (from a `.nfo` file; see
+[metadata.md](metadata.md)) is also scored with that as its title text. It
+keeps the higher of the two scores.
+
 A token **matches** a word when it is a prefix of that word: `mat` matches
 `matrix`. A token made only of digits also matches the item's `year`.
 

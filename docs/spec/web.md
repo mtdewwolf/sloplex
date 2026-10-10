@@ -43,6 +43,10 @@ token as a query parameter.
 - Sections are listed, then their items, as a poster grid.
   - Posters come from `/photo/:/transcode`.
   - Shows open into seasons, and seasons into episodes.
+  - Item pages show `.nfo` metadata when present (see
+    [metadata.md](metadata.md)): original title, tagline, summary, content
+    rating, rating, genres, directors, writers, studio, collections, and up
+    to 12 cast members.
   - Episodes are labelled `S1E2`, or by air date (`originallyAvailableAt`)
     for date-based episodes, whose season numbers are years.
 - Search uses `/hubs/search`.
