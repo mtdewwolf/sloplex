@@ -13,3 +13,11 @@ func TestNormalize(t *testing.T) {
 		}
 	}
 }
+
+func TestTag(t *testing.T) {
+	for in, want := range map[string]string{"eng": "en", "fre": "fr", "ger": "de", "ENG": "en", "chi": "zh", "haw": "haw", "xyz": "xyz"} {
+		if got := Tag(in); got != want {
+			t.Errorf("Tag(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

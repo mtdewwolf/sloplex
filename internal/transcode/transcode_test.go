@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -213,5 +214,40 @@ func TestStreamMP4(t *testing.T) {
 	defer none.Close()
 	if _, err := none.StartHLS(1, "", 1, Request{}); !errors.Is(err, ErrUnavailable) {
 		t.Errorf("no ffmpeg = %v", err)
+	}
+}
+
+func TestFirstPTS(t *testing.T) {
+	ffmpeg, path := clip(t, "6")
+	m, _ := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc"), MaxTranscodes: 1})
+	defer m.Close()
+	s, err := m.StartHLS(1, "", 1, Request{Input: path, Source: clipInfo, Offset: 1.5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seg, err := m.Segment(context.Background(), s, "00000.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _ := os.Open(seg)
+	defer f.Close()
+	pts, err := FirstPTS(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v", "-show_entries", "packet=pts",
+		"-read_intervals", "%+#1", "-of", "csv=p=0", seg).Output()
+	if err != nil {
+		t.Skip("ffprobe not installed")
+	}
+	want, _ := strconv.ParseInt(strings.Trim(strings.Split(string(out), "\n")[0], " ,"), 10, 64)
+	if pts != want {
+		t.Errorf("FirstPTS = %d, first video packet PTS = %d", pts, want)
+	}
+	if s.Request.Offset != 1.5 {
+		t.Errorf("session request offset = %v", s.Request.Offset)
+	}
+	if _, err := FirstPTS(strings.NewReader("not a transport stream at all, definitely not 188 bytes of sync...." + strings.Repeat("x", 400))); err == nil {
+		t.Error("garbage accepted")
 	}
 }

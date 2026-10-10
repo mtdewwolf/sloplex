@@ -71,6 +71,20 @@ func Lookup(s string) (code, name string, ok bool) {
 	return l.code, l.name, ok
 }
 
+// Tag returns the shortest language tag for an ISO 639-2/B code: its ISO
+// 639-1 code when it has one (as HLS and BCP 47 prefer), else the code.
+func Tag(code string) string {
+	if l, ok := byKey[strings.ToLower(code)]; ok {
+		for _, a := range l.aliases {
+			if len(a) == 2 {
+				return a
+			}
+		}
+		return l.code
+	}
+	return strings.ToLower(code)
+}
+
 // Normalize returns the ISO 639-2/B code and name for s. Unknown
 // three-letter codes are kept as the code with no name; anything else
 // yields empty strings.

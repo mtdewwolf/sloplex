@@ -26,6 +26,23 @@ func TestShiftVTT(t *testing.T) {
 	}
 }
 
+func TestWithTimestampMap(t *testing.T) {
+	const want = "WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:133500,LOCAL:00:00:00.000\n\n00:01.000 --> 00:02.000\nHi\n"
+	for _, in := range []string{
+		"WEBVTT\n\n00:01.000 --> 00:02.000\nHi\n",
+		"WEBVTT\r\n\r\n00:01.000 --> 00:02.000\r\nHi\r\n",
+		"WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:900000,LOCAL:00:00:00.000\n\n00:01.000 --> 00:02.000\nHi\n",
+	} {
+		if got := string(WithTimestampMap([]byte(in), 133500)); got != want {
+			t.Errorf("WithTimestampMap(%q) =\n%q, want\n%q", in, got, want)
+		}
+	}
+	// The header keeps any text after WEBVTT.
+	if got := string(WithTimestampMap([]byte("WEBVTT - title\n\n"), 7)); !strings.HasPrefix(got, "WEBVTT - title\nX-TIMESTAMP-MAP=MPEGTS:7,") {
+		t.Errorf("titled header: %q", got)
+	}
+}
+
 func TestFormats(t *testing.T) {
 	if !IsText("subrip") || !IsText("mov_text") || IsText("hdmv_pgs_subtitle") || IsText("dvd_subtitle") {
 		t.Error("IsText")

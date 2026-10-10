@@ -170,3 +170,46 @@ These parameters add to [transcode.md](transcode.md):
   - **(sloplex)** Image subtitles are overlaid from their stream with
     `overlay=eof_action=pass` before scaling.
 - An unknown stream ID, or one from another part, returns `400`.
+
+### Subtitles inside HLS (sloplex)
+
+Unless a subtitle is burned in or `subtitles=none` is given, the master
+playlist from `start.m3u8` lists every text subtitle of the part (embedded
+or sidecar) as a WebVTT rendition. HLS players can then show and switch
+subtitles without fetching anything separately.
+
+```
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English (SRT)",LANGUAGE="en",DEFAULT=NO,AUTOSELECT=YES,FORCED=NO,URI="session/<sid>/subs/<streamID>/index.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=…,SUBTITLES="subs"
+```
+
+Rendition attributes:
+
+| Attribute  | Value |
+|------------|-------|
+| `NAME`     | `displayTitle`. Double quotes are replaced by `'`, and repeated names get ` (2)`, ` (3)`, and so on |
+| `LANGUAGE` | The two-letter code when there is one, else the three-letter code. Omitted when unknown |
+| `DEFAULT`  | `YES` for the subtitle selected by the rules above, otherwise `NO` |
+| `FORCED`   | `YES` for forced streams |
+
+The rendition URLs below sit under the session, so like the session's other
+URLs they need no token.
+
+`…/session/{sid}/subs/{streamID}/index.m3u8` returns a `VOD` playlist with a
+single segment, `subs.vtt`. The segment lasts the item's duration minus the
+transcode's `offset`, rounded up to whole seconds and at least 1 s.
+
+`…/session/{sid}/subs/{streamID}/subs.vtt` returns the subtitle as WebVTT:
+
+- Cues are shifted earlier by the transcode's `offset`.
+- Its header has
+  `X-TIMESTAMP-MAP=MPEGTS:<pts>,LOCAL:00:00:00.000`, where `<pts>` is the
+  presentation timestamp of the first video packet in the session's first
+  segment, which shows source time `offset`. If the segment has no video,
+  the smallest timestamp is used. ffmpeg's MPEG-TS output does not start at
+  0 (it typically starts near 1.4 s), so this value is read from the segment
+  rather than assumed.
+- The response waits for the first segment, under the same rules as segment
+  requests.
+
+A stream that is not a text subtitle of the session's part returns `404`.

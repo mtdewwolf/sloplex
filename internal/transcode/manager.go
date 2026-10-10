@@ -48,11 +48,13 @@ type Manager struct {
 
 // Session is a running or finished HLS transcode.
 type Session struct {
-	ID        string
-	Account   int
-	Label     string
-	ItemID    int
-	Plan      Plan
+	ID      string
+	Account int
+	Label   string
+	ItemID  int
+	Plan    Plan
+	// Request is the request the session was started with.
+	Request   Request
 	dir       string
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -180,7 +182,7 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 		return nil, ErrBusy
 	}
 	p := Decide(r)
-	s := &Session{ID: newID(), Account: account, Label: label, ItemID: itemID, Plan: p, done: make(chan struct{})}
+	s := &Session{ID: newID(), Account: account, Label: label, ItemID: itemID, Plan: p, Request: r, done: make(chan struct{})}
 	s.dir = filepath.Join(m.dir, s.ID)
 	s.lastTouch.Store(time.Now().UnixNano())
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {

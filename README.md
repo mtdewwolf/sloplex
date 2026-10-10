@@ -36,7 +36,7 @@ Sloplex is a standalone product:
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
-| Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in |
+| Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in, WebVTT renditions in HLS |
 
 ## Quick start
 
@@ -124,7 +124,8 @@ When transcoding:
 
 - image subtitles (PGS, VobSub) are burned into the picture;
 - text subtitles are sent to the player as a separate track, unless a client
-  asks for `subtitles=burn`.
+  asks for `subtitles=burn`. HLS streams list them as WebVTT subtitle
+  renditions, so HLS players can switch subtitles on their own.
 
 See [docs/spec/streams.md](docs/spec/streams.md).
 

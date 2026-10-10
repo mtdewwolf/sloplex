@@ -194,6 +194,24 @@ func ShiftVTT(vtt []byte, offset time.Duration) []byte {
 	return []byte(strings.Join(out, "\n\n"))
 }
 
+// WithTimestampMap sets the X-TIMESTAMP-MAP header of a WebVTT document,
+// mapping its time 0 to the MPEG-TS timestamp pts (90 kHz), as HLS players
+// require to align cues with the video.
+func WithTimestampMap(vtt []byte, pts int64) []byte {
+	lines := strings.Split(strings.ReplaceAll(string(vtt), "\r\n", "\n"), "\n")
+	header := fmt.Sprintf("X-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:00:00:00.000", pts)
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "WEBVTT") {
+		lines = append([]string{"WEBVTT", ""}, lines...)
+	}
+	out := []string{lines[0], header}
+	for _, l := range lines[1:] {
+		if !strings.HasPrefix(l, "X-TIMESTAMP-MAP=") {
+			out = append(out, l)
+		}
+	}
+	return []byte(strings.Join(out, "\n"))
+}
+
 func parseVTTTime(s string) (time.Duration, error) {
 	parts := strings.Split(s, ":")
 	var h, m int

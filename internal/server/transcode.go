@@ -3,13 +3,17 @@ package server
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/lang"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/probe"
+	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
@@ -21,6 +25,7 @@ func (s *Server) transcodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+transcodeBase+"/start.m3u8", s.handleTranscodeHLS)
 	mux.HandleFunc("GET "+transcodeBase+"/start.mp4", s.handleTranscodeMP4)
 	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/base/{file}", s.handleTranscodeFile)
+	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/subs/{stream}/{file}", s.handleTranscodeSubs)
 	for _, m := range []string{"GET ", "PUT "} {
 		mux.HandleFunc(m+transcodeBase+"/stop", s.handleTranscodeStop)
 		mux.HandleFunc(m+transcodeBase+"/ping", s.handleTranscodePing)
@@ -127,6 +132,7 @@ func (s *Server) applyStreams(w http.ResponseWriter, r *http.Request, part libra
 		return false
 	}
 
+	req.PartID = part.ID
 	if audio != nil && audio.Index >= 0 {
 		req.SelectAudio, req.AudioIndex = true, audio.Index
 		req.Source.AudioCodec, req.Source.AudioChannels = audio.Codec, audio.Channels
@@ -177,13 +183,141 @@ func (s *Server) handleTranscodeHLS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := sess.Plan
+	var renditions []string
+	if req.Burn == nil && r.URL.Query().Get("subtitles") != "none" {
+		renditions = s.subtitleRenditions(r, sess.ID, req.PartID)
+	}
 	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 	w.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprintf(w, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-STREAM-INF:BANDWIDTH=%d", p.Bandwidth)
+	fmt.Fprint(w, "#EXTM3U\n#EXT-X-VERSION:3\n")
+	for _, line := range renditions {
+		fmt.Fprintln(w, line)
+	}
+	fmt.Fprintf(w, "#EXT-X-STREAM-INF:BANDWIDTH=%d", p.Bandwidth)
 	if p.Width > 0 && p.Height > 0 {
 		fmt.Fprintf(w, ",RESOLUTION=%dx%d", p.Width, p.Height)
 	}
+	if len(renditions) > 0 {
+		fmt.Fprint(w, `,SUBTITLES="subs"`)
+	}
 	fmt.Fprintf(w, "\nsession/%s/base/index.m3u8\n", sess.ID)
+}
+
+// subtitleRenditions lists a part's text subtitles as HLS WebVTT
+// renditions; see "Subtitles inside HLS" in docs/spec/streams.md.
+func (s *Server) subtitleRenditions(r *http.Request, sid string, partID int) []string {
+	part, _, err := s.store.Part(partID)
+	if err != nil {
+		return nil
+	}
+	chosen := s.subtitleChoice(r, part)
+	names := map[string]int{}
+	var out []string
+	for _, st := range part.Streams {
+		if st.Type != probe.StreamSubtitle || !isTextSub(st) {
+			continue
+		}
+		name, _ := displayTitles(st)
+		name = strings.ReplaceAll(name, `"`, "'")
+		if names[name]++; names[name] > 1 {
+			name = fmt.Sprintf("%s (%d)", name, names[name])
+		}
+		line := fmt.Sprintf(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="%s"`, name)
+		if code, _ := lang.Normalize(st.Language); code != "" {
+			line += fmt.Sprintf(`,LANGUAGE="%s"`, lang.Tag(code))
+		}
+		yesNo := func(b bool) string {
+			if b {
+				return "YES"
+			}
+			return "NO"
+		}
+		line += fmt.Sprintf(`,DEFAULT=%s,AUTOSELECT=YES,FORCED=%s,URI="session/%s/subs/%d/index.m3u8"`,
+			yesNo(chosen != nil && chosen.ID == st.ID), yesNo(st.Forced), sid, st.ID)
+		out = append(out, line)
+	}
+	return out
+}
+
+// subtitleChoice is the subtitle a transcode request selects: the
+// subtitleStreamID parameter (already validated), else the selection rules.
+func (s *Server) subtitleChoice(r *http.Request, part library.Part) *library.Stream {
+	if v := r.URL.Query().Get("subtitleStreamID"); v != "" {
+		id, _ := strconv.Atoi(v)
+		st, _ := findStream(part, id, probe.StreamSubtitle)
+		return st
+	}
+	_, sub := s.selected(s.account(r), part)
+	return sub
+}
+
+// handleTranscodeSubs serves a session's subtitle rendition playlist and
+// WebVTT document.
+func (s *Server) handleTranscodeSubs(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.tc.Session(r.PathValue("sid"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	id, err := strconv.Atoi(r.PathValue("stream"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	st, part, _, err := s.store.Stream(id)
+	if err != nil || part.ID != sess.Request.PartID || st.Type != probe.StreamSubtitle || !isTextSub(st) {
+		http.NotFound(w, r)
+		return
+	}
+	offset := sess.Request.Offset
+	switch r.PathValue("file") {
+	case "index.m3u8":
+		dur := 1.0
+		if it, err := s.store.Item(sess.ItemID); err == nil && len(it.Media) > 0 {
+			dur = max(1, math.Ceil(float64(it.Media[0].Duration)/1000-offset))
+		}
+		w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+		w.Header().Set("Cache-Control", "no-cache")
+		fmt.Fprintf(w, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n"+
+			"#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:%d.000,\nsubs.vtt\n#EXT-X-ENDLIST\n", int(dur), int(dur))
+	case "subs.vtt":
+		seg, err := s.tc.Segment(r.Context(), sess, "00000.ts")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		f, err := os.Open(seg)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		pts, err := transcode.FirstPTS(f)
+		f.Close()
+		if err != nil {
+			s.log.Warn("subtitle timestamp map", "session", sess.ID, "err", err)
+			http.Error(w, "could not read the first segment", http.StatusInternalServerError)
+			return
+		}
+		src, srcFormat, err := s.subtitleSource(r, st, part)
+		if err == nil {
+			src, err = s.subs.Convert(r.Context(), src, srcFormat, subtitles.VTT)
+		}
+		var vtt []byte
+		if err == nil {
+			vtt, err = os.ReadFile(src)
+		}
+		if err != nil {
+			s.log.Warn("subtitle rendition", "stream", id, "err", err)
+			http.Error(w, "could not read subtitle", http.StatusInternalServerError)
+			return
+		}
+		vtt = subtitles.WithTimestampMap(subtitles.ShiftVTT(vtt, time.Duration(offset*float64(time.Second))), pts)
+		w.Header().Set("Content-Type", subtitles.ContentType(subtitles.VTT))
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(vtt)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (s *Server) handleTranscodeFile(w http.ResponseWriter, r *http.Request) {

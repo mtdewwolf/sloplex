@@ -31,6 +31,8 @@ type Request struct {
 	AudioIndex  int
 	// Burn renders a subtitle into the video.
 	Burn *Burn
+	// PartID identifies the source part for callers; ffmpeg ignores it.
+	PartID int
 }
 
 // Burn describes a subtitle to burn in; see docs/spec/streams.md.
