@@ -31,6 +31,9 @@ type Config struct {
 	Tokens []string `json:"tokens"`
 	// AllowedNetworks are CIDRs whose clients skip token authentication.
 	AllowedNetworks []string `json:"allowedNetworks"`
+	// StrictTokenAuth rejects invalid supplied tokens instead of falling back
+	// to owner access on trusted networks. Tokenless trusted access is unchanged.
+	StrictTokenAuth bool `json:"strictTokenAuth"`
 	// FFprobe is the ffprobe binary: "" looks it up on PATH, "-" disables probing.
 	FFprobe string `json:"ffprobe"`
 	// FFmpeg is the ffmpeg binary used for thumbnails: "" looks it up on

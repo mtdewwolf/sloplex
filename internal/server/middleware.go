@@ -59,6 +59,7 @@ type authenticator struct {
 	accounts *accounts.Store
 	networks []netip.Prefix
 	public   map[string]bool
+	strict   bool
 }
 
 func newAuthenticator(master []string, networks []netip.Prefix, accts *accounts.Store) *authenticator {
@@ -136,6 +137,13 @@ func (a *authenticator) trustedPeer(remote string) bool {
 func (a *authenticator) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := a.resolve(r)
+		// Opt-in hardening preserves legacy trusted-network behavior by default.
+		// A revoked device credential must not become an owner credential.
+		supplied := r.Header.Get(tokenHeader) != "" || r.URL.Query().Get(tokenHeader) != ""
+		if !ok && supplied && a.strict && !a.isPublic(r.URL.Path) {
+			http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+			return
+		}
 		if !ok && a.trustedPeer(r.RemoteAddr) {
 			p, ok = principal{AccountID: accounts.OwnerID}, true
 		}
