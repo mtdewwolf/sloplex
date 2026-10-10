@@ -52,13 +52,12 @@ to publish to another registry.
 If a run fails after pushing some tags, don't reuse the version: release
 the next patch version.
 
-## First release
+## Package visibility
 
-GitHub makes a new package private. After the first release, the owner
-opens the package from the repository's **Packages** list, then **Package
-settings**, and changes its visibility to public. Until then, pulling it
-needs a GitHub token with the `read:packages` scope. Making the package
-public cannot be undone.
+The package is public, so pulling needs no login. GitHub can make a new
+package private, for example in a fork. Its owner then makes it public in
+the package's **Package settings**, which cannot be undone. Until then,
+pulling it needs a GitHub token with the `read:packages` scope.
 
 ## Security updates
 

@@ -64,10 +64,9 @@ image, use `ghcr.io/mtdewwolf/sloplex@sha256:...` from those notes.
 tested.
 
 The image is Linux amd64, matching x86-64 TrueNAS systems. The NAS needs to
-reach `ghcr.io` over HTTPS when installing and updating. No registry
-credentials are needed once the package is public. Never enter a GitHub
-password or token in the app YAML. If a pull fails with `denied` or
-`unauthorized`, the package has not been made public yet.
+reach `ghcr.io` over HTTPS when installing and updating. The package is
+public, so no registry credentials are needed. Never enter a GitHub
+password or token in the app YAML.
 
 The image comes from the official Debian base, pinned by digest in the
 `Dockerfile`, plus Debian's ffmpeg. Each release passes the same container
