@@ -104,7 +104,7 @@ jobs:
             for t in $TAGS; do printf " \`%s:%s\`" "$REPO" "$t"; done
             echo
             echo
-            echo "To update a TrueNAS install, see [Update and rollback](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/deploy-truenas.md#update-and-rollback)."
+            echo "To update a TrueNAS install, see [Updates](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/deploy-truenas.md#updates)."
           } > "$notes"
           cat "$notes" >> "$GITHUB_STEP_SUMMARY"
           flags=(--latest="$LATEST")

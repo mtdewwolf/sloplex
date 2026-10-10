@@ -1,9 +1,9 @@
 # Render with an explicit --env-file before pasting into TrueNAS.
-# No build or registry pull happens during app deployment.
+# The image is pulled when missing and when TrueNAS updates the app;
+# starting or restarting never pulls. See docs/deploy-truenas.md#updates.
 services:
   sloplex:
-    image: "${SLOPLEX_IMAGE:?Set the exact locally loaded image tag}"
-    pull_policy: never
+    image: "${SLOPLEX_IMAGE:?Set the image, such as ghcr.io/mtdewwolf/sloplex:latest}"
     user: "${SLOPLEX_UID:?Choose a non-root NAS UID}:${SLOPLEX_GID:?Choose its non-root GID}"
     init: true
     restart: unless-stopped

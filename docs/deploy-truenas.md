@@ -1,9 +1,11 @@
 # CPU-only Sloplex on TrueNAS 25.10 (Goldeye)
 
 This is a staged deployment recipe for the 25.10 family, including 25.10.2.
-It has not been installed or tested on a NAS as part of this change. There
-is no published Sloplex image: build and load your own. No GPU is needed.
-Do not paste the template into TrueNAS before filling and checking inputs.
+It has not been installed or tested on a NAS as part of this change. Each
+release publishes a CPU-only image, `ghcr.io/mtdewwolf/sloplex`; TrueNAS
+pulls it and offers each new release from the Apps screen. No GPU is
+needed. Do not paste the template into TrueNAS before filling and checking
+inputs.
 
 ## Before installation
 
@@ -43,58 +45,42 @@ all host paths must already exist. Bind mounts deliberately refuse to
 create missing paths. Do not install Go, Docker packages, or developer mode
 on the TrueNAS host.
 
-## Build and retain an image on a separate Docker computer
+## Choose an image
 
-Use a reviewed checkout and Docker with Compose v2. Run from the repository
-root. The example builds Linux amd64 for an x86-64 NAS; verify the NAS
-architecture before selecting the platform. Cross-platform builders need
-working emulation. This does not publish anything:
+Pick the tag that sets how far updates go:
 
-```sh
-REV=$(git rev-parse HEAD)
-IMAGE="sloplex:cpu-$REV"
-docker build --platform linux/amd64 --build-arg VERSION="$REV" -t "$IMAGE" .
-python3 test/container/smoke.py "$IMAGE"
-docker image inspect "$IMAGE" --format '{{.Id}} {{.Architecture}}'
-docker save --output "sloplex-$REV.tar" "$IMAGE"
-sha256sum "sloplex-$REV.tar" > "sloplex-$REV.tar.sha256"
-```
+| Image | Updates you are offered |
+|---|---|
+| `ghcr.io/mtdewwolf/sloplex:latest` | every release (recommended) |
+| `ghcr.io/mtdewwolf/sloplex:0.1` | fixes to 0.1 only; move to 0.2 by hand |
+| `ghcr.io/mtdewwolf/sloplex:0.1.0` | none; this exact build forever |
 
-The smoke test runs only on that Docker computer, uses generated temporary
-state and loopback networking, and removes its test stack afterward. It
-checks non-root operation, read-only media/root/config, separate writable
-state/scratch, CPU H.264/AAC encode and probe, health, web serving, required
-authentication, and identity persistence across restart. It does not prove
-NAS ACLs or real-media performance. CI runs the same build and smoke test;
-CI does not push images. The browser and Go suites remain separate checks.
+Replace `0.1` with the current version from the
+[releases page](https://github.com/mtdewwolf/sloplex/releases). Before 1.0,
+a minor release such as 0.2 may change how stored data is kept; its release
+notes say so. Each release also lists its image digest. For a fully pinned
+image, use `ghcr.io/mtdewwolf/sloplex@sha256:...` from those notes.
+[Releases](releases.md) explains the tags and how images are built and
+tested.
 
-The builder version and both base-image digests are pinned to official
-images, verified against Docker Library metadata on 2026-10-10:
-[Go](https://github.com/docker-library/repo-info/blob/master/repos/golang/remote/1.27.2-bookworm.md)
-and [Debian](https://github.com/docker-library/repo-info/blob/master/repos/debian/remote/bookworm-slim.md).
-Build arguments can override them with newly verified digests. Debian package repositories can change, so a fresh build
-is not promised byte-for-byte identical. For repeatable deployment/rollback,
-retain this exact image archive, checksum, source commit, and image ID.
-Rebuild and retest periodically for base/FFmpeg security updates. Do not
-reuse a tag for different image contents.
+The image is Linux amd64, matching x86-64 TrueNAS systems. The NAS needs to
+reach `ghcr.io` over HTTPS when installing and updating. No registry
+credentials are needed once the package is public. Never enter a GitHub
+password or token in the app YAML. If a pull fails with `denied` or
+`unauthorized`, the package has not been made public yet.
 
-Transfer the archive and checksum to a chosen private NAS staging location
-using your approved file-transfer method. In the NAS shell, verify the
-checksum and load the archive into the existing Docker engine:
+The image comes from the official Debian base, pinned by digest in the
+`Dockerfile`, plus Debian's ffmpeg. Each release passes the same container
+smoke test as CI before it is pushed. That test checks:
 
-```sh
-# Run in the directory containing the transferred archive and checksum.
-sha256sum -c sloplex-REPLACE_REV.tar.sha256
-sudo docker load --input sloplex-REPLACE_REV.tar
-sudo docker image inspect sloplex:cpu-REPLACE_REV --format '{{.Id}} {{.Architecture}}'
-```
+- non-root operation;
+- read-only media, root and config;
+- separate writable state and scratch;
+- CPU H.264/AAC encode and probe;
+- health, web serving and required authentication;
+- identity persistence across restart.
 
-Replace `REPLACE_REV` with the actual commit. Match the ID and architecture
-against the build computer's record. A locally loaded image can be removed
-by pruning or a host rebuild; keep the archive somewhere safe and reload
-when needed. `pull_policy: never` intentionally fails if that exact image
-is absent. Do not enter registry credentials or replace it with an
-unverified public image.
+It does not prove NAS ACLs or real-media performance.
 
 ## Prepare config and render Compose
 
@@ -119,8 +105,9 @@ socket is required. Discovery is intentionally disabled because bridge
 port mapping would otherwise advertise the wrong external port.
 
 Copy `deploy/env.example` outside the checkout and fill every value with
-verified NAS paths, UID/GID, address, checked port, and exact loaded tag.
-Do not put passwords or tokens in it. Render on the build computer:
+verified NAS paths, UID/GID, address, checked port, and the chosen image.
+Do not put passwords or tokens in it. Render with Docker Compose v2 on any
+computer with a checkout of this repository:
 
 ```sh
 docker compose --env-file /ABSOLUTE/PATH/TO/filled.env \
@@ -129,7 +116,8 @@ docker compose --env-file /ABSOLUTE/PATH/TO/filled.env \
 
 Missing variables fail the render. Review the result carefully: all
 placeholders must be gone, the user must be non-root, only the chosen LAN
-address/port may be published, and all paths must be NAS paths. There is
+address/port may be published, all paths must be NAS paths, and the image
+must be the one you chose. There is
 no need for a `.env` file in TrueNAS. Rendering validates Compose syntax,
 not path existence, ACLs, port availability, or workload sizing.
 
@@ -138,7 +126,8 @@ not path existence, ACLs, port availability, or workload sizing.
 In Apps, select/configure the Apps pool if not already done. Open Discover
 Apps, use the three-dot menu beside Custom App, then **Install via YAML**.
 Choose an unused application name such as `sloplex`, paste the reviewed
-rendered YAML, and save only when ready to start the server. Use the Apps
+rendered YAML, and save only when ready to start the server. TrueNAS pulls
+the image and then starts it. Use the Apps
 UI to stop/start/edit it afterward, rather than starting a second copy with
 `docker compose up` in the shell. YAML installs receive basic syntax
 validation, not semantic safety validation by TrueNAS.
@@ -217,23 +206,85 @@ review logs privately. Do not weaken security options or make media
 writable to work around a permission failure. Scanner permissions can
 produce an empty library even while the health check is green.
 
-## Update and rollback
+## Updates
 
-Before changing image/config, stop Sloplex in Apps and take a consistent
-snapshot/backup of its dedicated state dataset and config. Retain the old
-image archive/ID and rendered Compose. Exclude transcode scratch from
-backups; it is disposable. Do not remove identity.json or accounts.json.
+Watch the repository's releases on GitHub (**Watch**, then **Custom**, then
+**Releases**) to hear about them. TrueNAS also notices them itself: with
+**Check for docker image updates** on (the default, under the Apps
+screen's settings), an app whose tag has a newer image gets a yellow update
+badge and an **Update** button. For `latest` that is every release; for
+`0.1`, every 0.1 fix. Updates are never applied without you.
 
-Build and smoke-test the new image on the build computer, transfer/load it,
-then edit the app YAML to the new immutable tag and start. Repeat the
-checks above. No automatic image updates or registry publishing are set up.
+For each update:
 
-To roll back, stop the app, restore the previous config and image tag
-(reload its archive if needed), and start. If the newer application changed
-stored-data formats, restore the matching state snapshot while stopped
-before running the older image. Snapshot restoration discards changes made
-after that snapshot; preserve a current backup first. Never run two Sloplex
-instances against the same writable state. Stop/remove only this app if
-abandoning the trial; preserve datasets until you deliberately decide to
-remove them. Never delete or roll back the media dataset as part of this
-procedure.
+1. Read the release notes, especially for a new minor version.
+2. Take a snapshot of the state dataset and config, and note the current
+   exact version (shown on the Admin page) for rollback. Sloplex replaces
+   its data files whole, so a snapshot of the running app is safe. Exclude
+   transcode scratch; it is disposable. Do not remove identity.json or
+   accounts.json.
+3. Click **Update** on the app. TrueNAS pulls the new image and restarts
+   Sloplex with it. Starting and restarting the app on its own never pulls
+   an image.
+4. Open the Admin page in the web app and check the version under
+   **Server**. Repeat the checks above.
+
+With an exact version tag there is no badge. Edit the app's YAML, change
+the image to the new version, and save. If no badge appears for a moving
+tag, do the same with the new release's exact version; you can switch
+back to the moving tag at the next update.
+
+New releases also carry Debian's latest ffmpeg and library fixes. Staying
+on an old version means missing those as well.
+
+## Rollback
+
+Stop the app, edit its YAML to the previous exact version, such as
+`ghcr.io/mtdewwolf/sloplex:0.1.0`, and start it. If the newer version
+changed stored data, restore the matching state snapshot while stopped,
+before starting the older image. Restoring a snapshot discards changes made
+after it; take a current one first. The app now stays on that version;
+switch back to `latest` when the problem is fixed.
+
+Never run two Sloplex instances against the same writable state. To
+abandon the trial, stop and remove only this app. Keep the datasets until
+you deliberately decide to remove them. Never delete or roll back the media
+dataset as part of this procedure.
+
+## Build your own image
+
+To run unreleased code, or without a registry, build on a separate Docker
+computer from a reviewed checkout. Verify the NAS architecture first:
+
+```sh
+REV=$(git rev-parse HEAD)
+IMAGE="sloplex:cpu-$REV"
+docker build --platform linux/amd64 --build-arg VERSION="$REV" --build-arg REVISION="$REV" -t "$IMAGE" .
+python3 test/container/smoke.py "$IMAGE"
+docker image inspect "$IMAGE" --format '{{.Id}} {{.Architecture}}'
+docker save --output "sloplex-$REV.tar" "$IMAGE"
+sha256sum "sloplex-$REV.tar" > "sloplex-$REV.tar.sha256"
+```
+
+Transfer the archive and checksum to a private NAS staging location. Then,
+in that directory in the NAS shell:
+
+```sh
+sha256sum -c sloplex-REPLACE_REV.tar.sha256
+sudo docker load --input sloplex-REPLACE_REV.tar
+sudo docker image inspect sloplex:cpu-REPLACE_REV --format '{{.Id}} {{.Architecture}}'
+```
+
+Match the ID and architecture against the build computer's record. Set
+`SLOPLEX_IMAGE=sloplex:cpu-REV` with the actual commit. After rendering,
+add `pull_policy: never` under `image:` so TrueNAS never looks for it in a
+registry. Such an app gets no update badge; repeat this section for each
+update.
+
+Keep the archive: pruning or a host rebuild can remove a loaded image. A
+fresh build is not byte-for-byte repeatable, because Debian's package
+repositories change. The base images are pinned to official digests,
+verified against Docker Library metadata on 2026-10-10:
+[Go](https://github.com/docker-library/repo-info/blob/master/repos/golang/remote/1.27.2-bookworm.md)
+and [Debian](https://github.com/docker-library/repo-info/blob/master/repos/debian/remote/bookworm-slim.md).
+Build arguments can override them with newly verified digests.

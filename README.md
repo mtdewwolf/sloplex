@@ -66,9 +66,11 @@ curl -H "X-Plex-Token: $TOKEN" -H "Accept: application/json" localhost:32400/lib
 
 ### Containers and TrueNAS
 
-For a CPU-only container build and a TrueNAS 25.10 (Goldeye) Custom App
-recipe, see [the deployment guide](docs/deploy-truenas.md). Build the image
-yourself; this repository does not publish a container image.
+Each release publishes a CPU-only image, `ghcr.io/mtdewwolf/sloplex`,
+tagged with its version, `X.Y`, and `latest`. For a TrueNAS 25.10 (Goldeye)
+Custom App that installs it and offers each new release, see
+[the deployment guide](docs/deploy-truenas.md).
+[Releases](docs/releases.md) covers the tags and making a release.
 
 ### Web app
 

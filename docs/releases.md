@@ -54,9 +54,11 @@ the next patch version.
 
 ## First release
 
-GitHub makes a new package private. Until the owner changes it under the
-package's **Package settings**, pulling it needs a GitHub token with the
-`read:packages` scope. Making the package public cannot be undone.
+GitHub makes a new package private. After the first release, the owner
+opens the package from the repository's **Packages** list, then **Package
+settings**, and changes its visibility to public. Until then, pulling it
+needs a GitHub token with the `read:packages` scope. Making the package
+public cannot be undone.
 
 ## Security updates
 
