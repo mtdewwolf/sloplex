@@ -136,10 +136,12 @@ func Announce(ctx context.Context, info func() Announcement, targets []*net.UDPA
 		select {
 		case <-ctx.Done():
 		case <-time.After(time.Until(start.Add(at))):
-			send(Hello(info()))
-			continue
 		}
-		break
+		// Both may be ready at once; shutting down wins.
+		if ctx.Err() != nil {
+			break
+		}
+		send(Hello(info()))
 	}
 	<-ctx.Done()
 	_ = conn.SetWriteDeadline(time.Now().Add(time.Second))
