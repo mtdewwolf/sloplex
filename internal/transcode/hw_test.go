@@ -48,26 +48,26 @@ func TestArgsHW(t *testing.T) {
 		want []string
 		not  []string
 	}{
-		"vaapi full": {box, Pipeline{AccelVAAPI, dev, true}, Output{HLSDir: "/s"}, []string{
+		"vaapi full": {box, Pipeline{Accel: AccelVAAPI, Device: dev, Full: true}, Output{HLSDir: "/s"}, []string{
 			"-hwaccel vaapi -hwaccel_device " + dev + " -hwaccel_output_format vaapi -i in.mkv",
 			"-vf scale_vaapi=w=1920:h=1080:format=nv12", "-c:v h264_vaapi -qp 23", "-force_key_frames",
 		}, []string{"libx264", "-crf"}},
-		"vaapi full no scale": {same, Pipeline{AccelVAAPI, dev, true}, Output{}, []string{"-vf scale_vaapi=format=nv12"}, nil},
-		"vaapi encode-only capped": {capped, Pipeline{AccelVAAPI, dev, false}, Output{}, []string{
+		"vaapi full no scale": {same, Pipeline{Accel: AccelVAAPI, Device: dev, Full: true}, Output{}, []string{"-vf scale_vaapi=format=nv12"}, nil},
+		"vaapi encode-only capped": {capped, Pipeline{Accel: AccelVAAPI, Device: dev, Full: false}, Output{}, []string{
 			"-vaapi_device " + dev + " -i in.mkv", "-vf format=nv12,hwupload,scale_vaapi=w=1920:h=1080",
 			"-b:v 3200k -maxrate 4000k -bufsize 8000k",
 		}, []string{"-hwaccel"}},
-		"qsv full": {box, Pipeline{AccelQSV, dev, true}, Output{}, []string{
+		"qsv full": {box, Pipeline{Accel: AccelQSV, Device: dev, Full: true}, Output{}, []string{
 			"-hwaccel qsv -qsv_device " + dev + " -hwaccel_output_format qsv -c:v hevc_qsv -i in.mkv",
 			"scale_qsv=w=1920:h=1080:format=nv12", "-c:v h264_qsv -preset veryfast -forced_idr 1 -global_quality 23",
 		}, nil},
-		"qsv encode-only": {box, Pipeline{AccelQSV, dev, false}, Output{}, []string{"-vf scale=1920:1080,format=nv12", "-c:v h264_qsv"}, []string{"-hwaccel"}},
-		"nvenc full capped": {capped, Pipeline{AccelNVENC, "", true}, Output{HLSDir: "/s"}, []string{
+		"qsv encode-only": {box, Pipeline{Accel: AccelQSV, Device: dev, Full: false}, Output{}, []string{"-vf scale=1920:1080,format=nv12", "-c:v h264_qsv"}, []string{"-hwaccel"}},
+		"nvenc full capped": {capped, Pipeline{Accel: AccelNVENC, Device: "", Full: true}, Output{HLSDir: "/s"}, []string{
 			"-hwaccel cuda -hwaccel_output_format cuda", "scale_cuda=w=1920:h=1080:format=nv12",
 			"-c:v h264_nvenc -preset p4 -rc vbr -cq 23 -b:v 0 -forced-idr 1 -maxrate 4000k -bufsize 8000k",
 		}, nil},
-		"nvenc encode-only": {box, Pipeline{AccelNVENC, "", false}, Output{}, []string{"-vf scale=1920:1080,format=yuv420p", "-c:v h264_nvenc"}, []string{"-hwaccel"}},
-		"videotoolbox": {box, Pipeline{AccelVideoToolbox, "", true}, Output{}, []string{
+		"nvenc encode-only": {box, Pipeline{Accel: AccelNVENC, Device: "", Full: false}, Output{}, []string{"-vf scale=1920:1080,format=yuv420p", "-c:v h264_nvenc"}, []string{"-hwaccel"}},
+		"videotoolbox": {box, Pipeline{Accel: AccelVideoToolbox, Device: "", Full: true}, Output{}, []string{
 			"-hwaccel videotoolbox", "-vf scale=1920:1080,format=nv12", "-c:v h264_videotoolbox -realtime 1 -b:v 6000k",
 		}, nil},
 		"null output": {box, Pipeline{}, Output{Null: true}, []string{"-c:v libx264", "-f null -"}, nil},
@@ -86,7 +86,7 @@ func TestArgsHW(t *testing.T) {
 	}
 	// Copying video never touches the GPU.
 	cp := Request{Input: "in.mp4", Source: probe.Info{VideoCodec: "h264", Width: 1280, Height: 720}}
-	if got := strings.Join(Args(cp, Decide(cp), Output{}, Pipeline{AccelVAAPI, dev, true}), " "); strings.Contains(got, "hwaccel") || !strings.Contains(got, "-c:v copy") {
+	if got := strings.Join(Args(cp, Decide(cp), Output{}, Pipeline{Accel: AccelVAAPI, Device: dev, Full: true}), " "); strings.Contains(got, "hwaccel") || !strings.Contains(got, "-c:v copy") {
 		t.Errorf("copy with hw pipeline: %s", got)
 	}
 }

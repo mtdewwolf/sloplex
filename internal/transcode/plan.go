@@ -119,8 +119,10 @@ type Plan struct {
 	Bandwidth int
 	// Burn is set when a subtitle is burned in.
 	Burn bool
-	// ToneMap is set when an HDR source is tone mapped to SDR.
+	// ToneMap is set when an HDR source is tone mapped to SDR, and HDR is
+	// the source's kind (probe.HDRPQ or probe.HDRHLG).
 	ToneMap bool
+	HDR     string
 	// WebM is set for VP9/Opus output.
 	WebM bool
 	// Levels are the lower quality levels of an HLS session; the Manager
@@ -145,6 +147,7 @@ func Decide(r Request) Plan {
 	withinRate := r.MaxBitrate == 0 || (src.Bitrate > 0 && src.Bitrate <= r.MaxBitrate)
 	p.Burn = r.Burn != nil
 	p.ToneMap = src.HDR != ""
+	p.HDR = src.HDR
 	p.CopyVideo = src.VideoCodec == videoCodec && fits && withinRate && !r.NoDirectStream && !p.Burn && !p.ToneMap
 
 	p.Width, p.Height = src.Width, src.Height
@@ -216,7 +219,21 @@ func Encoder(accel string) string { return encoders[accel] }
 type HW struct {
 	Accel  string
 	Device string
+	// ToneMap is the GPU tone mapper that passed the startup check, or ""
+	// for the CPU; see "GPU tone mapping" in docs/spec/transcode.md.
+	ToneMap string
 }
+
+// GPU tone mappers.
+const (
+	ToneMapVAAPI  = "vaapi"
+	ToneMapQSV    = "qsv"
+	ToneMapOpenCL = "opencl"
+)
+
+// openCLDevice selects the OpenCL device: GPUs only. Tests point it at a
+// CPU implementation.
+var openCLDevice = "ocl:,device_type=gpu"
 
 // Pipeline is one way to run a video encode. A zero Pipeline is software.
 type Pipeline struct {
@@ -224,23 +241,59 @@ type Pipeline struct {
 	Device string
 	// Full keeps frames on the GPU from decode to encode.
 	Full bool
+	// ToneMap tone maps HDR on the GPU with this tone mapper; "" uses the
+	// CPU.
+	ToneMap string
 }
 
 func (p Pipeline) String() string {
+	var s string
 	switch {
 	case p.Accel == "":
-		return "software"
+		s = "software"
 	case p.Full:
-		return p.Accel + " (full)"
+		s = p.Accel + " (full)"
 	default:
-		return p.Accel + " (encode only)"
+		s = p.Accel + " (encode only)"
 	}
+	if p.ToneMap != "" {
+		s += " with " + p.ToneMap + " tone mapping"
+	}
+	return s
+}
+
+// gpuToneMapPipeline returns the pipeline that tone maps a plan on the GPU,
+// if the server has a fitting tone mapper; see "GPU tone mapping".
+func gpuToneMapPipeline(hw HW, p Plan) (Pipeline, bool) {
+	if !p.ToneMap || p.CopyVideo || p.WebM {
+		return Pipeline{}, false
+	}
+	switch {
+	case hw.ToneMap == ToneMapVAAPI && hw.Accel == AccelVAAPI, hw.ToneMap == ToneMapQSV && hw.Accel == AccelQSV:
+		// HDR10 only, and frames never leave the GPU, so no burn-in.
+		if p.HDR != probe.HDRPQ || p.Burn {
+			return Pipeline{}, false
+		}
+		return Pipeline{Accel: hw.Accel, Device: hw.Device, Full: true, ToneMap: hw.ToneMap}, true
+	case hw.ToneMap == ToneMapOpenCL && (hw.Accel == AccelNVENC || hw.Accel == ""):
+		return Pipeline{Accel: hw.Accel, Device: hw.Device, ToneMap: ToneMapOpenCL}, true
+	}
+	return Pipeline{}, false
 }
 
 // Pipelines lists the pipelines to try for a plan, fastest first. Copied
 // video needs no encoder, and VP9 is only encoded in software, so those use
 // only the software pipeline.
 func Pipelines(hw HW, p Plan) []Pipeline {
+	out := basePipelines(hw, p)
+	if gpu, ok := gpuToneMapPipeline(hw, p); ok {
+		out = append([]Pipeline{gpu}, out...)
+	}
+	return out
+}
+
+// basePipelines lists the pipelines without GPU tone mapping.
+func basePipelines(hw HW, p Plan) []Pipeline {
 	if p.CopyVideo || p.WebM || hw.Accel == "" {
 		return []Pipeline{{}}
 	}
@@ -278,7 +331,14 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 		chain := videoFilter(r, p, pl)
 		tone := ""
 		preW, preH, preScaled := toneMapSize(r, p)
-		if p.ToneMap {
+		switch {
+		case !p.ToneMap:
+		case pl.ToneMap == ToneMapOpenCL:
+			tone = openCLToneMapFilter(preW, preH)
+		case pl.ToneMap != "":
+			// VAAPI and QSV tone map inside the hardware chain.
+			preScaled = false
+		default:
 			tone = toneMapFilter(r.Source.HDR, preW, preH)
 		}
 		switch {
@@ -489,8 +549,28 @@ func toneMapFilter(hdr string, w, h int) string {
 		"zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 }
 
+// openCLToneMapFilter tone maps on an OpenCL GPU, scaling to w×h first
+// when that makes the picture smaller; see "GPU tone mapping".
+func openCLToneMapFilter(w, h int) string {
+	pre := ""
+	if w > 0 && h > 0 {
+		pre = fmt.Sprintf("scale=%d:%d,", w, h)
+	}
+	return pre + "format=p010,hwupload," +
+		"tonemap_opencl=tonemap=hable:desat=0:t=bt709:m=bt709:p=bt709:r=tv:format=nv12," +
+		"hwdownload,format=nv12"
+}
+
 // hwInputArgs are the device and decoder options placed before -i.
 func hwInputArgs(pl Pipeline, srcCodec string) []string {
+	if pl.ToneMap == ToneMapOpenCL {
+		args := []string{"-init_hw_device", "opencl=" + openCLDevice, "-filter_hw_device", "ocl"}
+		if pl.Accel == AccelNVENC {
+			// Decode on the GPU into system memory for the OpenCL upload.
+			args = append(args, "-hwaccel", "cuda")
+		}
+		return args
+	}
 	switch {
 	case pl.Accel == AccelVAAPI && pl.Full:
 		return []string{"-hwaccel", "vaapi", "-hwaccel_device", pl.Device, "-hwaccel_output_format", "vaapi"}
@@ -532,6 +612,17 @@ func videoFilter(r Request, p Plan, pl Pipeline) string {
 		return "format=" + format
 	}
 	switch {
+	case pl.ToneMap == ToneMapVAAPI:
+		tm := "tonemap_vaapi=format=nv12:t=bt709:m=bt709:p=bt709"
+		if scale {
+			return fmt.Sprintf("scale_vaapi=w=%d:h=%d,%s", p.Width, p.Height, tm)
+		}
+		return tm
+	case pl.ToneMap == ToneMapQSV:
+		if scale {
+			return fmt.Sprintf("vpp_qsv=tonemap=1:format=nv12:w=%d:h=%d", p.Width, p.Height)
+		}
+		return "vpp_qsv=tonemap=1:format=nv12"
 	case pl.Accel == AccelVAAPI && pl.Full:
 		return hwScale("scale_vaapi")
 	case pl.Accel == AccelVAAPI:

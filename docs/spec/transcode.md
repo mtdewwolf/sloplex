@@ -25,6 +25,9 @@
   `RESOLUTION`, come from the HLS specification (RFC 8216). ffmpeg's
   `split` filter and the HLS muxer's `var_stream_map` option come from
   ffmpeg's public documentation.
+- The GPU tone-mapping filters `tonemap_vaapi`, `vpp_qsv` (with
+  `tonemap=1`), and `tonemap_opencl`, and OpenCL device selection with
+  `device_type`, come from ffmpeg's public documentation.
 - The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
   `-init_hw_device`, `scale_vaapi`, `scale_cuda`, `scale_qsv`, `hwupload`,
   and the `h264_*` encoders and their rate-control options) come from
@@ -33,6 +36,7 @@
   - the progressive `start.mp4` and `start.webm` endpoints;
   - capability session URLs;
   - the decision rules, limits, idle timeout, and ffmpeg arguments;
+  - the GPU tone mapping order, the startup check and its thresholds;
   - the adaptive quality levels: the ladder, the CPU budget rule, the `abr`
     parameter, and the level names in URLs;
   - the client capability parameters of the `decision` endpoint, and its
@@ -150,12 +154,76 @@ zscale=t=bt709:m=bt709:r=tv,format=yuv420p
 
 - The output is tagged `-colorspace bt709 -color_primaries bt709
   -color_trc bt709`.
-- Like burn-in, tone mapping needs frames in system memory. It therefore
-  skips the full-hardware pipeline; the hardware-encode-only and software
-  pipelines still apply.
+- Like burn-in, tone mapping on the CPU needs frames in system memory. It
+  therefore skips the full-hardware pipeline; the hardware-encode-only and
+  software pipelines still apply. See **GPU tone mapping** for what runs
+  first when a GPU can tone map.
 - **Effect:** diffuse white (about 100 nits) lands in the upper mid-tones,
   and highlights of 1000 nits and more reach full white. Naive conversion
   instead leaves the picture grey and dull.
+
+### GPU tone mapping
+
+When the server has a GPU tone mapper that passed its startup check
+(below), an HDR transcode first tries a pipeline that tone maps on the GPU.
+If that pipeline fails before producing output, the CPU pipelines above
+follow, as with any pipeline fallback.
+
+| Tone mapper | Used with | Sources | Pipeline |
+|---|---|---|---|
+| `vaapi` | `hwaccel` vaapi | PQ only | Full hardware: `-hwaccel vaapi … -hwaccel_output_format vaapi`, then `[scale_vaapi=w=W:h=H,]tonemap_vaapi=format=nv12:t=bt709:m=bt709:p=bt709`, then `h264_vaapi` |
+| `qsv` | `hwaccel` qsv | PQ only | Full hardware: the QSV decoder, then `vpp_qsv=tonemap=1:format=nv12[:w=W:h=H]`, then `h264_qsv` |
+| `opencl` (opt-in) | `hwaccel` nvenc, or no hardware encoder | PQ and HLG | Decode (`-hwaccel cuda` with nvenc, else software), `[scale=W:H,]format=p010,hwupload,tonemap_opencl=tonemap=hable:desat=0:t=bt709:m=bt709:p=bt709:r=tv:format=nv12,hwdownload,format=nv12`, then the encoder (`h264_nvenc` or libx264) |
+
+- `tonemap_vaapi` and `vpp_qsv` tone map HDR10 only, so HLG sources and
+  any source with subtitles to burn in use the CPU pipelines there. With
+  `opencl`, frames return to system memory, so burn-in works after tone
+  mapping.
+- **(sloplex)** OpenCL uses a GPU device only: `-init_hw_device
+  opencl=ocl:,device_type=gpu -filter_hw_device ocl`. OpenCL on the CPU,
+  such as POCL, is never chosen.
+- The scale runs only when the output is smaller than the source, so tone
+  mapping works at the output size, as on the CPU.
+- The output is tagged BT.709 as above.
+- With `opencl`, the CPU load of the transcode counts decoding and scaling
+  but not tone mapping (see **Load model**).
+- **Brightness differs a little from the CPU path.** The GPU tone mappers
+  adapt to the brightness of each frame. On the check clip below, OpenCL
+  gives luma 140 for 100-nit white and 228 for 1000-nit highlights, where
+  the CPU path gives 157 and 255.
+
+**Which tone mappers are tried** is set by `gpuToneMapping` (config):
+
+| Value | Tried |
+|---|---|
+| `auto` (default) | `vaapi` with hwaccel vaapi, `qsv` with hwaccel qsv |
+| `opencl` | As `auto`, plus `opencl` with hwaccel nvenc or no accelerator |
+| `off` | None; tone mapping always runs on the CPU |
+
+**(sloplex)** OpenCL is opt-in because its stability could not be shown.
+With ffmpeg 6.1 and POCL (an OpenCL implementation that runs on the CPU),
+`tonemap_opencl` crashed with heap corruption in about 40% of runs, at
+every picture size tried. It could not be tested on a GPU. A transcode
+that crashes after it has started sending output is not retried on
+another pipeline.
+
+**Startup check (sloplex).** After hardware detection, the server checks
+each tone mapper to try. For each, it:
+
+1. encodes a two-second 640×360 HDR10 clip with libx265: 10-bit, BT.2020,
+   PQ, with mastering display and content light level metadata. The left
+   half is about 100 nits (10-bit code 509), and the right half about 1000
+   nits (code 723);
+2. transcodes it to 320×180 H.264 through that tone mapper's pipeline;
+3. decodes the result and measures the average luma of each half.
+
+The first tone mapper whose left half averages 60–230 and whose right half
+averages at least 220 is used. Naive conversion without tone mapping gives
+about 129 and 192 on this clip, so it fails the check. A failure, a timeout of 20 s, or a picture
+outside those ranges (black, washed out, or not tone mapped) rules it out.
+Without libx265, or when none passes, tone mapping stays on the CPU. The
+result is logged, and `/sloplex/transcoder` reports it as `toneMap`
+(`vaapi`, `qsv`, `opencl`, or `cpu`).
 
 ## Hardware acceleration (sloplex)
 
@@ -214,11 +282,13 @@ Returns JSON:
 
 ```json
 {"available": true, "hwaccel": "vaapi", "encoder": "h264_vaapi", "device": "/dev/dri/renderD128", "requested": "auto", "maxTranscodes": 2,
- "x264Preset": "auto", "throttle": true, "softwareLoad": 0.42,
+ "toneMap": "vaapi", "x264Preset": "auto", "throttle": true, "softwareLoad": 0.42,
  "benchmark": {"faster": 100.8, "veryfast": 144, "superfast": 201.6, "ultrafast": 316.8}}
 ```
 
 - `hwaccel` is `"none"` when encoding in software.
+- `toneMap` is the GPU tone mapper in use, or `"cpu"`; see **GPU tone
+  mapping**.
 - `available` is false when ffmpeg is missing.
 - `x264Preset` is the configured value. `throttle` is true when throttling
   is on and the OS supports it.
@@ -654,8 +724,8 @@ session/<sid>/480p/index.m3u8
 ## Not implemented yet
 
 - Hardware decoding when video is copied, which is not needed.
-- Tone mapping on the GPU (`tonemap_vaapi`, `tonemap_opencl`); HDR sources
-  are tone mapped on the CPU.
+- GPU tone mapping on macOS (VideoToolbox), and for HLG sources with VAAPI
+  or QSV; those are tone mapped on the CPU.
 - Dolby Vision profile 5, which has no HDR10 base layer, is not tone mapped
   correctly.
 - Adaptive quality levels with hardware encoding; with an active GPU

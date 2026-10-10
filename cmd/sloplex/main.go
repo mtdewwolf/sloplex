@@ -124,6 +124,7 @@ func run(configPath string, log *slog.Logger) error {
 	var hw transcode.HW
 	if ffmpeg != "" {
 		hw = transcode.Detect(ctx, ffmpeg, cfg.Hwaccel, cfg.HwaccelDevice, runtime.GOOS, log)
+		hw.ToneMap = transcode.DetectToneMap(ctx, ffmpeg, hw, cfg.GPUToneMapping, log)
 	}
 	tc, err := transcode.New(transcode.Options{
 		FFmpeg: ffmpeg, Dir: filepath.Join(cfg.DataDir, "transcode"), MaxTranscodes: cfg.MaxTranscodes,

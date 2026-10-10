@@ -51,8 +51,11 @@ type Config struct {
 	X264Preset string `json:"x264Preset"`
 	// TranscodeThrottle pauses HLS transcodes that are far ahead of the
 	// player.
-	TranscodeThrottle bool      `json:"transcodeThrottle"`
-	Libraries         []Library `json:"libraries"`
+	TranscodeThrottle bool `json:"transcodeThrottle"`
+	// GPUToneMapping chooses the GPU tone mappers to try: auto, opencl or
+	// off.
+	GPUToneMapping string    `json:"gpuToneMapping"`
+	Libraries      []Library `json:"libraries"`
 }
 
 // SupportedTypes lists the library types the server can scan.
@@ -74,6 +77,7 @@ func Default() Config {
 		HwaccelDevice:     "/dev/dri/renderD128",
 		X264Preset:        "auto",
 		TranscodeThrottle: true,
+		GPUToneMapping:    "auto",
 		Watch:             true,
 		ScanInterval:      "1h",
 	}
@@ -122,6 +126,11 @@ func (c Config) Validate() error {
 	}
 	if _, err := c.ScanEvery(); err != nil {
 		return err
+	}
+	switch c.GPUToneMapping {
+	case "auto", "opencl", "off":
+	default:
+		return fmt.Errorf("gpuToneMapping %q: want auto, opencl or off", c.GPUToneMapping)
 	}
 	switch c.X264Preset {
 	case "auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium":

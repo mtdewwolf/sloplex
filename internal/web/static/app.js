@@ -800,7 +800,8 @@ function transcoderSummary(tc) {
   if (tc.x264Preset === "auto") {
     sw += tc.benchmark ? ` (${Math.round(tc.benchmark.veryfast)} fps at 720p veryfast; load ${Math.round(tc.softwareLoad * 100)}%)` : " (benchmark pending or unavailable)";
   }
-  return `${hw} · ${sw} · up to ${tc.maxTranscodes} at once` + (tc.throttle ? " · throttled when ahead" : "");
+  const tone = tc.toneMap && tc.toneMap !== "cpu" ? ` · HDR tone mapping on the GPU (${tc.toneMap})` : " · HDR tone mapping on the CPU";
+  return `${hw} · ${sw} · up to ${tc.maxTranscodes} at once` + (tc.throttle ? " · throttled when ahead" : "") + tone;
 }
 
 function editAccount(a) {

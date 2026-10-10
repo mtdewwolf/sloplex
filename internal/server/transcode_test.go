@@ -205,7 +205,7 @@ func TestTranscoderInfo(t *testing.T) {
 	}
 	if info["available"] != false || info["hwaccel"] != "none" || info["encoder"] != "libx264" ||
 		info["requested"] != "auto" || info["maxTranscodes"] != float64(1) ||
-		info["x264Preset"] != "auto" || info["throttle"] != false || info["softwareLoad"] != float64(0) {
+		info["x264Preset"] != "auto" || info["throttle"] != false || info["softwareLoad"] != float64(0) || info["toneMap"] != "cpu" {
 		t.Errorf("info = %v", info)
 	}
 	if _, ok := info["benchmark"]; ok {

@@ -192,10 +192,11 @@ func (m *Manager) SetCapacity(c Capacity) {
 	// Existing encodes retain their preset, but must start contributing to
 	// load estimates once the asynchronous benchmark is available.
 	for _, s := range m.sessions {
-		s.load = m.capacity.Load(s.Request.Source, s.Plan, s.Plan.Preset) + m.capacity.LevelsLoad(s.Request.Source, s.Plan)
+		lp := loadPlan(s.Plan, *s.pipeline.Load())
+		s.load = m.capacity.Load(s.Request.Source, lp, s.Plan.Preset) + m.capacity.LevelsLoad(s.Request.Source, s.Plan)
 	}
 	for st := range m.streams {
-		st.load = m.capacity.Load(st.source, st.plan, st.plan.Preset)
+		st.load = m.capacity.Load(st.source, loadPlan(st.plan, st.pipeline), st.plan.Preset)
 	}
 }
 
@@ -232,14 +233,14 @@ func (m *Manager) softwareLoadLocked() float64 {
 		if pl := s.pipeline.Load(); pl.Accel == "" {
 			total += s.load
 		} else if !pl.Full {
-			total += m.capacity.filterLoad(s.Request.Source, s.Plan)
+			total += m.capacity.filterLoad(s.Request.Source, loadPlan(s.Plan, *pl))
 		}
 	}
 	for st := range m.streams {
 		if st.pipeline.Accel == "" {
 			total += st.load
 		} else if !st.pipeline.Full {
-			total += m.capacity.filterLoad(st.source, st.plan)
+			total += m.capacity.filterLoad(st.source, loadPlan(st.plan, st.pipeline))
 		}
 	}
 	return total
@@ -248,17 +249,28 @@ func (m *Manager) softwareLoadLocked() float64 {
 // choosePresetLocked sets the software preset of a plan and returns its
 // estimated load. It must hold m.mu.
 func (m *Manager) choosePresetLocked(r Request, p *Plan) float64 {
+	// Estimate for the first pipeline tried.
+	lp := loadPlan(*p, Pipelines(m.hw, *p)[0])
 	if p.WebM {
 		p.Preset = ""
-		return m.capacity.Load(r.Source, *p, "")
+		return m.capacity.Load(r.Source, lp, "")
 	}
 	if m.preset != "" && m.preset != PresetAuto {
 		p.Preset = m.preset
-		return m.capacity.Load(r.Source, *p, m.preset)
+		return m.capacity.Load(r.Source, lp, m.preset)
 	}
 	var load float64
-	p.Preset, load = m.capacity.ChoosePreset(m.softwareLoadLocked(), r.Source, *p)
+	p.Preset, load = m.capacity.ChoosePreset(m.softwareLoadLocked(), r.Source, lp)
 	return load
+}
+
+// loadPlan is a plan as the CPU sees it on a pipeline: tone mapping on the
+// GPU costs the CPU nothing.
+func loadPlan(p Plan, pl Pipeline) Plan {
+	if pl.ToneMap != "" {
+		p.ToneMap = false
+	}
+	return p
 }
 
 // chooseLevelsLocked sets the lower quality levels of an HLS plan whose

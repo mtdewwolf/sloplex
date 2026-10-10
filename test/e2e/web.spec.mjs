@@ -66,7 +66,8 @@ await s.shot(page, "collection");
 // Admin: a kid account limited to the Kids library.
 await page.click("#nav-admin");
 await page.waitForSelector("h1:text('Admin')");
-s.check((await page.textContent("#transcoder")).includes("up to"), "admin page shows the transcoder");
+const transcoder = await page.textContent("#transcoder");
+s.check(transcoder.includes("up to") && transcoder.includes("HDR tone mapping on the CPU"), `admin page shows the transcoder: ${transcoder}`);
 await page.click("button:text('New account')");
 await page.fill("#admin-panel input:not([type])", "kid");
 await page.fill("#admin-panel input[type=password]", "cartoons1");

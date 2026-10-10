@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
@@ -450,6 +451,7 @@ func (s *Server) handleTranscoderInfo(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"available":     s.tc.Available(),
 		"hwaccel":       accel,
+		"toneMap":       cmp.Or(hw.ToneMap, "cpu"),
 		"encoder":       transcode.Encoder(hw.Accel),
 		"device":        hw.Device,
 		"requested":     s.tc.Requested(),

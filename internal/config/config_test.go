@@ -48,6 +48,7 @@ func TestValidate(t *testing.T) {
 		"bad hwaccel": {func(c *Config) { c.Hwaccel = "cuda" }, "hwaccel"},
 		"bad scan":    {func(c *Config) { c.ScanInterval = "hourly" }, "scanInterval"},
 		"short scan":  {func(c *Config) { c.ScanInterval = "10s" }, "scanInterval"},
+		"bad tonemap": {func(c *Config) { c.GPUToneMapping = "cuda" }, "gpuToneMapping"},
 		"bad preset":  {func(c *Config) { c.X264Preset = "placebo" }, "x264Preset"},
 	} {
 		cfg := Default()

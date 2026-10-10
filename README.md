@@ -214,6 +214,15 @@ GPU access in containers:
 
 Set `"hwaccel": "none"` to always use software.
 
+HDR videos can also be tone mapped on an Intel GPU (VAAPI or QSV): at
+startup Sloplex converts a small HDR10 test clip on the GPU and uses GPU
+tone mapping only if the picture comes out right. Other machines tone map
+on the CPU. NVIDIA owners can opt in to OpenCL tone mapping with
+`"gpuToneMapping": "opencl"`; it is not on by default because its
+stability couldn't be verified (see "GPU tone mapping" in
+[docs/spec/transcode.md](docs/spec/transcode.md)). `"gpuToneMapping": "off"`
+always uses the CPU.
+
 ### CPU-only transcoding
 
 Without a GPU, Sloplex does four things to keep playback smooth:
@@ -262,6 +271,7 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
 | `hwaccel`         | `"auto"`       | `auto`, `none`, `vaapi`, `qsv`, `nvenc`, or `videotoolbox` |
 | `hwaccelDevice`   | `/dev/dri/renderD128` | GPU render node for `vaapi` and `qsv`              |
+| `gpuToneMapping`  | `"auto"`       | HDR tone mapping on the GPU: `auto` (Intel VAAPI/QSV if they pass a startup check), `opencl` (also OpenCL), `off` |
 | `watch`           | `true`         | Rescan a library when its folders change (Linux)          |
 | `scanInterval`    | `"1h"`         | Rescan every library this often (at least `1m`); `"0"` turns it off |
 | `x264Preset`      | `"auto"`       | `auto`, or one of `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` |
