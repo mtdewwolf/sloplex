@@ -6,7 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mtdewwolf/sloplex/internal/probe"
 )
@@ -152,7 +154,11 @@ func TestManagerPresets(t *testing.T) {
 
 	// Keep the scheduling input deterministic: a two-second real encoder
 	// can finish before the second stream acquires the scheduling lock.
-	s := &Session{done: make(chan struct{}), load: 0.7}
+	// It is freshly touched, so the idle reaper leaves it alone; were it
+	// reaped anyway, cancelling it ends it like a real session.
+	done := make(chan struct{})
+	s := &Session{done: done, load: 0.7, cancel: sync.OnceFunc(func() { close(done) })}
+	s.lastTouch.Store(time.Now().UnixNano())
 	s.pipeline.Store(&Pipeline{})
 	m.mu.Lock()
 	m.sessions["scheduling-test"] = s
