@@ -147,19 +147,27 @@ func run(configPath string, log *slog.Logger) error {
 		Subtitles: subtitles.New(ffmpeg, filepath.Join(cfg.DataDir, "cache", "subs")), Log: log})
 
 	started := time.Now().Unix()
-	if cfg.Discovery {
+	announced := make(chan struct{})
+	if !cfg.Discovery {
+		close(announced)
+	} else {
 		conn, err := gdm.Listen(log)
 		if err != nil {
 			log.Warn("gdm: discovery disabled", "err", err)
+			close(announced)
 		} else {
+			info := func() gdm.Announcement {
+				return gdm.Announcement{MachineID: id.MachineID, Name: cfg.FriendlyName,
+					Version: version, Port: port, UpdatedAt: started}
+			}
 			go func() {
-				info := func() gdm.Announcement {
-					return gdm.Announcement{MachineID: id.MachineID, Name: cfg.FriendlyName,
-						Version: version, Port: port, UpdatedAt: started}
-				}
 				if err := gdm.Serve(ctx, conn, info, log); err != nil {
 					log.Error("gdm stopped", "err", err)
 				}
+			}()
+			go func() {
+				defer close(announced)
+				gdm.Announce(ctx, info, gdm.AnnounceTargets, log)
 			}()
 		}
 	}
@@ -184,7 +192,9 @@ func run(configPath string, log *slog.Logger) error {
 	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := httpSrv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	err = httpSrv.Shutdown(shutdownCtx)
+	<-announced // BYE
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

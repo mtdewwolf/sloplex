@@ -18,7 +18,7 @@ Sloplex is a standalone product:
 | Area                               | State                                    |
 |------------------------------------|------------------------------------------|
 | Server root, `/identity`           | ✅                                       |
-| GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`                    |
+| GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`; announces `HELLO`/`BYE` on start and stop |
 | Local token auth, trusted CIDRs    | ✅                                       |
 | Multiple users                     | ✅ accounts, passwords, per-device tokens, per-user watch history |
 | Per-user library restrictions      | ✅ e.g. a kids account that sees only the kids library |

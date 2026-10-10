@@ -2,11 +2,12 @@
 
 ## Provenance
 
-- The port numbers, multicast group, `M-SEARCH` request line, and response
-  header names come from publicly available community documentation of the
-  "G'Day Mate" (GDM) protocol and from open-source client libraries' public
-  docs.
-- The choice of headers to send and the fallback behaviour are **(sloplex)**.
+- The port numbers, multicast group, `M-SEARCH` request line, the `HELLO`
+  and `BYE` announcement lines, and the response header names come from
+  publicly available community documentation of the "G'Day Mate" (GDM)
+  protocol and from open-source client libraries' public docs.
+- The choice of headers to send, the announcement timing and destinations,
+  and the fallback behaviour are **(sloplex)**.
 
 ## Transport
 
@@ -45,9 +46,44 @@ Updated-At: <unix seconds>\r\n
 - `Port` is the TCP port of the HTTP API.
 - Header values MUST NOT contain CR or LF. The server strips them.
 
+## Announcements (server → clients)
+
+The server announces itself without being asked, so clients that are
+already running see it appear and disappear at once.
+
+- `HELLO` when discovery starts:
+
+  ```
+  HELLO * HTTP/1.0\r\n
+  Content-Type: plex/media-server\r\n
+  Resource-Identifier: <machineIdentifier>\r\n
+  Name: <friendlyName>\r\n
+  Port: <HTTP port>\r\n
+  Version: <server version>\r\n
+  Updated-At: <unix seconds>\r\n
+  \r\n
+  ```
+
+- `BYE` when the server shuts down:
+
+  ```
+  BYE * HTTP/1.0\r\n
+  Content-Type: plex/media-server\r\n
+  Resource-Identifier: <machineIdentifier>\r\n
+  \r\n
+  ```
+
+- **(sloplex)** Each announcement goes to UDP port **32413** at both the
+  multicast group `239.0.0.250` and the broadcast address
+  `255.255.255.255`, from an ephemeral port. A destination that fails is
+  logged at debug level and skipped.
+- **(sloplex)** UDP can lose datagrams, so `HELLO` is sent three times: at
+  start, after 2 s, and after 10 s. `BYE` is sent once, and shutdown waits
+  for it, up to 1 s.
+- Header values follow the same rules as the search response.
+
 ## Not implemented yet
 
-- Unsolicited `HELLO` / `BYE` announcements to clients on port 32413.
 - Client/player discovery on ports 32410–32413.
 
 ## Fallback
@@ -55,4 +91,5 @@ Updated-At: <unix seconds>\r\n
 - **(sloplex)** If joining the multicast group fails, for example in a
   container with no multicast route, the server listens on plain UDP
   `0.0.0.0:32414` and logs a warning.
-- Discovery can be turned off with `"discovery": false` in the config.
+- Discovery can be turned off with `"discovery": false` in the config. That
+  also turns off announcements.
