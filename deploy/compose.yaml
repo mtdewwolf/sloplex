@@ -1,0 +1,48 @@
+# Render with an explicit --env-file before pasting into TrueNAS.
+# No build or registry pull happens during app deployment.
+services:
+  sloplex:
+    image: "${SLOPLEX_IMAGE:?Set the exact locally loaded image tag}"
+    pull_policy: never
+    user: "${SLOPLEX_UID:?Choose a non-root NAS UID}:${SLOPLEX_GID:?Choose its non-root GID}"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - target: 32400
+        published: "${SLOPLEX_PORT:?Choose and check a free host TCP port}"
+        host_ip: "${SLOPLEX_BIND_IP:?Choose the NAS LAN IPv4 address}"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: "${SLOPLEX_CONFIG:?Absolute path to sloplex.json}"
+        target: /config/sloplex.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${SLOPLEX_STATE:?Absolute path to dedicated state dataset}"
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${SLOPLEX_SCRATCH:?Absolute path to dedicated transcode scratch dataset}"
+        target: /data/transcode
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${SLOPLEX_MEDIA:?Absolute path to selected media dataset}"
+        target: /media
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

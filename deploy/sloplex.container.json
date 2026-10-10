@@ -1,0 +1,15 @@
+{
+  "friendlyName": "Sloplex",
+  "listen": ":32400",
+  "dataDir": "/data",
+  "discovery": false,
+  "allowedNetworks": [],
+  "tokens": [],
+  "hwaccel": "none",
+  "maxTranscodes": 1,
+  "x264Preset": "auto",
+  "transcodeThrottle": true,
+  "watch": true,
+  "scanInterval": "1h",
+  "libraries": []
+}

@@ -62,6 +62,12 @@ curl -H "X-Plex-Token: $TOKEN" localhost:32400/library/sections
 curl -H "X-Plex-Token: $TOKEN" -H "Accept: application/json" localhost:32400/library/sections/1/all
 ```
 
+### Containers and TrueNAS
+
+For a CPU-only container build and a TrueNAS 25.10 (Goldeye) Custom App
+recipe, see [the deployment guide](docs/deploy-truenas.md). Build the image
+yourself; this repository does not publish a container image.
+
 ### Web app
 
 Open `http://<server>:32400/web/` in a browser and sign in. The app lets you:

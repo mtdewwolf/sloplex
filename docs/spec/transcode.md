@@ -537,8 +537,11 @@ transcode:
 
 - An HLS session with no activity for 2 minutes is stopped and its directory
   deleted.
-- On startup, the server deletes the leftover `<dataDir>/transcode/` from any
-  earlier run. On shutdown it stops all transcodes.
+- On startup, the server deletes leftover contents inside `<dataDir>/transcode/`
+  from any earlier run, preserving the directory itself so it can be a
+  dedicated scratch mount. On shutdown it stops all transcodes and clears
+  the contents again. Cleanup does not follow symlinks. This storage layout
+  is **(sloplex)** design.
 - ffmpeg runs at full speed, except that HLS transcodes far ahead of the
   player are paused; see **Throttling**.
 
