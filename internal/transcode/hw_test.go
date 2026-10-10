@@ -132,7 +132,7 @@ func TestHLSFallsBackToSoftware(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seg, err := m.Segment(context.Background(), s, "00000.ts")
+	seg, err := m.Segment(context.Background(), s, "base", "00000.ts")
 	if err != nil {
 		t.Fatalf("no segment after fallback: %v", err)
 	}

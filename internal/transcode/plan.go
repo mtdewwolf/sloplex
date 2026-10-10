@@ -36,6 +36,61 @@ type Request struct {
 	// WebM selects VP9/Opus in WebM instead of H.264/AAC in MP4, for
 	// progressive streams only; see "WebM" in docs/spec/transcode.md.
 	WebM bool
+	// ABR controls lower quality levels of HLS sessions.
+	ABR ABR
+}
+
+// ABR is the abr request parameter; see "Adaptive quality levels" in
+// docs/spec/transcode.md.
+type ABR int
+
+const (
+	// ABRAuto adds lower levels that fit the CPU budget.
+	ABRAuto ABR = iota
+	// ABROff adds no lower levels.
+	ABROff
+	// ABROn adds every candidate level.
+	ABROn
+)
+
+// Level is a lower quality level of an HLS session.
+type Level struct {
+	Name          string
+	Width, Height int
+	// MaxBitrate is the video bitrate cap in kbps.
+	MaxBitrate int
+	// Bandwidth is the playlist BANDWIDTH in bits per second.
+	Bandwidth int
+}
+
+// ladder is the candidate quality levels, largest first.
+var ladder = []struct {
+	name       string
+	maxW, maxH int
+	kbps       int
+}{
+	{"1080p", 1920, 1080, 8000},
+	{"720p", 1280, 720, 3000},
+	{"480p", 854, 480, 1200},
+}
+
+// LevelCandidates lists the lower quality levels a plan could offer,
+// largest first: those shorter than the main output and with a lower
+// bandwidth.
+func LevelCandidates(r Request, p Plan) []Level {
+	if p.CopyVideo || p.WebM || p.Width <= 0 || p.Height <= 0 {
+		return nil
+	}
+	var out []Level
+	for _, l := range ladder {
+		w, h := fitBox(r.Source.Width, r.Source.Height, l.maxW, l.maxH)
+		bw := l.kbps*1000 + 160_000
+		if h >= p.Height || bw >= p.Bandwidth || (len(out) > 0 && out[len(out)-1].Height == h) {
+			continue
+		}
+		out = append(out, Level{Name: l.name, Width: w, Height: h, MaxBitrate: l.kbps, Bandwidth: bw})
+	}
+	return out
 }
 
 // Burn describes a subtitle to burn in; see docs/spec/streams.md.
@@ -68,6 +123,9 @@ type Plan struct {
 	ToneMap bool
 	// WebM is set for VP9/Opus output.
 	WebM bool
+	// Levels are the lower quality levels of an HLS session; the Manager
+	// sets them.
+	Levels []Level
 	// Preset is the libx264 preset for the software pipeline; empty means
 	// DefaultPreset. The Manager sets it; see "CPU transcoding".
 	Preset string
@@ -213,7 +271,9 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 	}
 	args = append(args, "-i", r.Input)
 
+	levels := levelsFor(p, out, pl)
 	videoMap := "0:v:0"
+	vf, graph := "", "" // the video filters, as -vf or as a filter graph ending in [vout]
 	if encode {
 		chain := videoFilter(r, p, pl)
 		tone := ""
@@ -230,10 +290,9 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 				off := strconv.FormatFloat(r.Offset, 'f', 3, 64)
 				f = "setpts=PTS+" + off + "/TB," + f + ",setpts=PTS-STARTPTS"
 			}
-			args = append(args, "-vf", joinFilters(tone, f, chain))
+			vf = joinFilters(tone, f, chain)
 		case r.Burn != nil:
 			src, sub := "[0:v:0]", fmt.Sprintf("[0:%d]", r.Burn.Index)
-			graph := ""
 			if tone != "" {
 				graph, src = "[0:v:0]"+tone+"[sdr];", "[sdr]"
 			}
@@ -244,19 +303,52 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 				sub = "[sub]"
 			}
 			graph += joinFilters(src+sub+"overlay=eof_action=pass", chain) + "[vout]"
-			args = append(args, "-filter_complex", graph)
 			videoMap = "[vout]"
 		default:
-			if vf := joinFilters(tone, chain); vf != "" {
-				args = append(args, "-vf", vf)
-			}
+			vf = joinFilters(tone, chain)
 		}
 	}
 	audioMap := "0:a:0?"
 	if r.SelectAudio {
 		audioMap = fmt.Sprintf("0:%d", r.AudioIndex)
 	}
-	args = append(args, "-map", videoMap, "-map", audioMap, "-sn", "-dn")
+	if len(levels) == 0 {
+		switch {
+		case graph != "":
+			args = append(args, "-filter_complex", graph)
+		case vf != "":
+			args = append(args, "-vf", vf)
+		}
+		args = append(args, "-map", videoMap, "-map", audioMap, "-sn", "-dn")
+	} else {
+		// Split the main picture once it is ready, and scale a copy for
+		// each level; every level gets its own audio stream.
+		top := "[0:v:0]"
+		switch {
+		case graph != "":
+			top, graph = "[vout]", graph+";"
+		case vf != "":
+			top, graph = "[vout]", "[0:v:0]"+vf+"[vout];"
+		}
+		graph += fmt.Sprintf("%ssplit=%d[lv0]", top, len(levels)+1)
+		for i := range levels {
+			graph += fmt.Sprintf("[lv%d]", i+1)
+		}
+		maps := []string{"-map", "[lv0]"}
+		for i, l := range levels {
+			graph += fmt.Sprintf(";[lv%d]scale=%d:%d[lo%d]", i+1, l.Width, l.Height, i+1)
+		}
+		args = append(args, "-filter_complex", graph)
+		for i := 0; i <= len(levels); i++ {
+			if i > 0 {
+				maps = append(maps, "-map", fmt.Sprintf("[lo%d]", i))
+			}
+			if p.HasAudio {
+				maps = append(maps, "-map", strings.TrimSuffix(audioMap, "?"))
+			}
+		}
+		args = append(append(args, maps...), "-sn", "-dn")
+	}
 
 	if !encode {
 		args = append(args, "-c:v", "copy")
@@ -269,7 +361,20 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 		if p.ToneMap {
 			args = append(args, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709")
 		}
-		args = append(args, rateControl(r, p, pl)...)
+		rc := rateControl(r, p, pl)
+		if len(levels) > 0 {
+			// A request's bitrate cap is for the main output only.
+			for i, a := range rc {
+				if a == "-maxrate" || a == "-bufsize" {
+					rc[i] = a + ":v:0"
+				}
+			}
+			for i, l := range levels {
+				rc = append(rc, fmt.Sprintf("-maxrate:v:%d", i+1), fmt.Sprintf("%dk", l.MaxBitrate),
+					fmt.Sprintf("-bufsize:v:%d", i+1), fmt.Sprintf("%dk", 2*l.MaxBitrate))
+			}
+		}
+		args = append(args, rc...)
 		if out.HLSDir != "" {
 			args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
 		}
@@ -286,6 +391,27 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 	}
 
 	switch {
+	case out.HLSDir != "" && len(levels) > 0:
+		streams := make([]string, 0, len(levels)+1)
+		for i := 0; i <= len(levels); i++ {
+			name := "base"
+			if i > 0 {
+				name = levels[i-1].Name
+			}
+			if p.HasAudio {
+				streams = append(streams, fmt.Sprintf("v:%d,a:%d,name:%s", i, i, name))
+			} else {
+				streams = append(streams, fmt.Sprintf("v:%d,name:%s", i, name))
+			}
+		}
+		return append(args,
+			"-f", "hls",
+			"-hls_time", strconv.Itoa(segmentSeconds),
+			"-hls_list_size", "0",
+			"-hls_playlist_type", "event",
+			"-var_stream_map", strings.Join(streams, " "),
+			"-hls_segment_filename", out.HLSDir+"/%v/%05d.ts",
+			out.HLSDir+"/%v/index.m3u8")
 	case out.HLSDir != "":
 		return append(args,
 			"-f", "hls",
@@ -303,6 +429,15 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 		return append(args, "-metadata:s", "DURATION=", "-f", "webm", "pipe:1")
 	}
 	return append(args, "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")
+}
+
+// levelsFor returns the lower quality levels Args writes: only for HLS on
+// the software pipeline, with encoded H.264 video.
+func levelsFor(p Plan, out Output, pl Pipeline) []Level {
+	if out.HLSDir == "" || pl.Accel != "" || p.CopyVideo || p.WebM {
+		return nil
+	}
+	return p.Levels
 }
 
 // qsvDecoders maps source codecs to QSV decoders, which ffmpeg needs named

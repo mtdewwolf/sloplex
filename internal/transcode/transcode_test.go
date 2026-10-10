@@ -101,7 +101,7 @@ func TestHLSSession(t *testing.T) {
 		t.Errorf("second session = %v, want ErrBusy", err)
 	}
 
-	pl, err := m.Playlist(ctx, s)
+	pl, err := m.Playlist(ctx, s, "base")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestHLSSession(t *testing.T) {
 	if !strings.Contains(string(b), "00000.ts") {
 		t.Fatalf("playlist:\n%s", b)
 	}
-	seg, err := m.Segment(ctx, s, "00000.ts")
+	seg, err := m.Segment(ctx, s, "base", "00000.ts")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,12 +118,12 @@ func TestHLSSession(t *testing.T) {
 		t.Errorf("segment is not MPEG-TS (%d bytes)", len(data))
 	}
 	for _, bad := range []string{"../index.m3u8", "0.ts", "00000.mp4"} {
-		if _, err := m.Segment(ctx, s, bad); !errors.Is(err, ErrNotFound) {
+		if _, err := m.Segment(ctx, s, "base", bad); !errors.Is(err, ErrNotFound) {
 			t.Errorf("Segment(%q) = %v", bad, err)
 		}
 	}
 	// The whole 10 s clip finishes: the last segment and ENDLIST appear.
-	if _, err := m.Segment(ctx, s, "00002.ts"); err != nil {
+	if _, err := m.Segment(ctx, s, "base", "00002.ts"); err != nil {
 		t.Errorf("last segment: %v", err)
 	}
 	<-s.done
@@ -225,7 +225,7 @@ func TestFirstPTS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seg, err := m.Segment(context.Background(), s, "00000.ts")
+	seg, err := m.Segment(context.Background(), s, "base", "00000.ts")
 	if err != nil {
 		t.Fatal(err)
 	}

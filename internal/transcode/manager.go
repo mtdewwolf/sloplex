@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -191,7 +192,7 @@ func (m *Manager) SetCapacity(c Capacity) {
 	// Existing encodes retain their preset, but must start contributing to
 	// load estimates once the asynchronous benchmark is available.
 	for _, s := range m.sessions {
-		s.load = m.capacity.Load(s.Request.Source, s.Plan, s.Plan.Preset)
+		s.load = m.capacity.Load(s.Request.Source, s.Plan, s.Plan.Preset) + m.capacity.LevelsLoad(s.Request.Source, s.Plan)
 	}
 	for st := range m.streams {
 		st.load = m.capacity.Load(st.source, st.plan, st.plan.Preset)
@@ -260,6 +261,32 @@ func (m *Manager) choosePresetLocked(r Request, p *Plan) float64 {
 	return load
 }
 
+// chooseLevelsLocked sets the lower quality levels of an HLS plan whose
+// main output has the given load, and returns their load; see "Adaptive
+// quality levels" in docs/spec/transcode.md. It must hold m.mu.
+func (m *Manager) chooseLevelsLocked(r Request, p *Plan, load float64) float64 {
+	if r.ABR == ABROff || m.hw.Accel != "" {
+		return 0
+	}
+	candidates := LevelCandidates(r, *p)
+	if r.ABR == ABROn {
+		p.Levels = candidates
+		return m.capacity.LevelsLoad(r.Source, *p)
+	}
+	if len(m.capacity) == 0 {
+		return 0
+	}
+	used := m.softwareLoadLocked() + load
+	extra := 0.0
+	for _, l := range candidates {
+		if ll := m.capacity.LevelLoad(r.Source, l, p.Preset); used+extra+ll <= targetLoad {
+			p.Levels = append(p.Levels, l)
+			extra += ll
+		}
+	}
+	return extra
+}
+
 // Available reports whether ffmpeg is configured.
 func (m *Manager) Available() bool { return m != nil && m.ffmpeg != "" }
 
@@ -323,6 +350,7 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 	}
 	p := Decide(r)
 	load := m.choosePresetLocked(r, &p)
+	load += m.chooseLevelsLocked(r, &p, load)
 	s := &Session{ID: newID(), Account: account, Label: label, ItemID: itemID, Plan: p, Request: r,
 		done: make(chan struct{}), load: load, nudge: make(chan struct{}, 1)}
 	s.dir = filepath.Join(m.dir, s.ID)
@@ -340,7 +368,8 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 	m.cleanup(replaced)
 
 	m.log.Info("transcode started", "session", s.ID, "item", itemID, "protocol", "hls",
-		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String(), "preset", presetLog(p))
+		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String(), "preset", presetLog(p),
+		"levels", len(p.Levels)+1)
 	go m.runHLS(ctx, s, r, attempts)
 	return s, nil
 }
@@ -364,7 +393,8 @@ func (m *Manager) runHLS(ctx context.Context, s *Session, r Request, attempts []
 			return
 		}
 		fail := ffmpegError(err, &stderr)
-		if hasSegments(s.dir) || i == len(attempts)-1 {
+		base, _ := s.LevelDir("base")
+		if hasSegments(base) || i == len(attempts)-1 {
 			s.err = fail
 			m.log.Warn("transcode failed", "session", s.ID, "pipeline", pl.String(), "err", fail)
 			return
@@ -527,26 +557,45 @@ func (m *Manager) Close() {
 
 var segmentRE = regexp.MustCompile(`^\d{5}\.ts$`)
 
-// Playlist waits until the media playlist lists at least one segment and
-// returns its path.
-func (m *Manager) Playlist(ctx context.Context, s *Session) (string, error) {
-	path := filepath.Join(s.dir, "index.m3u8")
+// LevelDir returns the directory of a quality level's playlist and
+// segments, and whether the session has that level. The main output is
+// "base"; a session without lower levels keeps it directly in its
+// directory.
+func (s *Session) LevelDir(name string) (string, bool) {
+	if len(s.Plan.Levels) == 0 {
+		return s.dir, name == "base"
+	}
+	if name == "base" || slices.ContainsFunc(s.Plan.Levels, func(l Level) bool { return l.Name == name }) {
+		return filepath.Join(s.dir, name), true
+	}
+	return "", false
+}
+
+// Playlist waits until a level's media playlist lists at least one segment
+// and returns its path.
+func (m *Manager) Playlist(ctx context.Context, s *Session, level string) (string, error) {
+	dir, ok := s.LevelDir(level)
+	if !ok {
+		return "", ErrNotFound
+	}
+	path := filepath.Join(dir, "index.m3u8")
 	return path, m.wait(ctx, s, func() bool {
 		segs, _ := listedSegments(path)
 		return len(segs) > 0
 	})
 }
 
-// Segment waits until a segment is listed in the playlist and returns its
-// path.
-func (m *Manager) Segment(ctx context.Context, s *Session, name string) (string, error) {
-	if !segmentRE.MatchString(name) {
+// Segment waits until a segment is listed in its level's playlist and
+// returns its path.
+func (m *Manager) Segment(ctx context.Context, s *Session, level, name string) (string, error) {
+	dir, ok := s.LevelDir(level)
+	if !ok || !segmentRE.MatchString(name) {
 		return "", ErrNotFound
 	}
 	n, _ := strconv.Atoi(strings.TrimSuffix(name, ".ts"))
 	s.requestSegment(n)
-	playlist := filepath.Join(s.dir, "index.m3u8")
-	return filepath.Join(s.dir, name), m.wait(ctx, s, func() bool {
+	playlist := filepath.Join(dir, "index.m3u8")
+	return filepath.Join(dir, name), m.wait(ctx, s, func() bool {
 		segs, _ := listedSegments(playlist)
 		return segs[name]
 	})

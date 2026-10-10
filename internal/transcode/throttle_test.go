@@ -26,7 +26,7 @@ func TestThrottle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Segment(ctx, s, "00000.ts"); err != nil {
+	if _, err := m.Segment(ctx, s, "base", "00000.ts"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "throttling", func() bool { return s.Throttled() })
@@ -45,7 +45,7 @@ func TestThrottle(t *testing.T) {
 	}
 
 	// Asking for the newest segment brings it within the resume limit.
-	if _, err := m.Segment(ctx, s, fmt.Sprintf("%05d.ts", len(segs)-1)); err != nil {
+	if _, err := m.Segment(ctx, s, "base", fmt.Sprintf("%05d.ts", len(segs)-1)); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "more segments", func() bool {
@@ -53,7 +53,7 @@ func TestThrottle(t *testing.T) {
 		return len(more) > len(segs)
 	})
 	// Requests far ahead keep it running to the end.
-	if _, err := m.Segment(ctx, s, "00009.ts"); err != nil {
+	if _, err := m.Segment(ctx, s, "base", "00009.ts"); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -112,7 +112,7 @@ func TestPausedSessionLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 			waitFor(t, "paused session", s.Throttled)
-			if _, err := m.Segment(context.Background(), s, "99999.ts/invalid"); err != ErrNotFound || s.requested.Load() != 0 {
+			if _, err := m.Segment(context.Background(), s, "base", "99999.ts/invalid"); err != ErrNotFound || s.requested.Load() != 0 {
 				t.Fatal("invalid segment advanced playback")
 			}
 			finished := make(chan error, 1)

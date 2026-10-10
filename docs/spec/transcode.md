@@ -21,6 +21,10 @@
   -cpu-used -row-mt`, `libopus`) come from ffmpeg's public documentation.
 - The libx264 preset names come from x264's and ffmpeg's public
   documentation.
+- Several variants in one master playlist, each with `BANDWIDTH` and
+  `RESOLUTION`, come from the HLS specification (RFC 8216). ffmpeg's
+  `split` filter and the HLS muxer's `var_stream_map` option come from
+  ffmpeg's public documentation.
 - The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
   `-init_hw_device`, `scale_vaapi`, `scale_cuda`, `scale_qsv`, `hwupload`,
   and the `h264_*` encoders and their rate-control options) come from
@@ -29,6 +33,8 @@
   - the progressive `start.mp4` and `start.webm` endpoints;
   - capability session URLs;
   - the decision rules, limits, idle timeout, and ffmpeg arguments;
+  - the adaptive quality levels: the ladder, the CPU budget rule, the `abr`
+    parameter, and the level names in URLs;
   - the client capability parameters of the `decision` endpoint, and its
     decision codes and texts;
   - the CPU benchmark, load model, preset choice, and throttle limits.
@@ -398,11 +404,18 @@ session/<sid>/base/index.m3u8
 - `<sid>` is a new random 128-bit hex ID created by the server.
 - The variant URL is relative, so it resolves to
   `/video/:/transcode/universal/session/<sid>/base/index.m3u8`.
+- `abr` **(sloplex)** controls lower quality levels: `0` none, `1` all
+  candidates. Without it, they depend on the CPU budget; see **Adaptive
+  quality levels**.
 - `session` is an optional label chosen by the client, used by `stop` and
   `ping`. Starting a new session with the same label for the same account
   stops the old session; this is how seeking is done.
 
 ### `GET /video/:/transcode/universal/session/{sid}/base/index.m3u8` and `…/base/{n}.ts`
+
+(Lower quality levels use their own name instead of `base`; see
+**Adaptive quality levels**.)
+
 
 These serve the media playlist and its segments.
 
@@ -533,6 +546,99 @@ transcode:
 | `transcodeHwEncoding` | The accelerator in use (`vaapi`, `qsv`, `nvenc`, `videotoolbox`), or empty for software or copy |
 | `transcodeHwFullPipeline` | `1` when decoding, scaling, and encoding all run on the GPU |
 
+## Adaptive quality levels (sloplex)
+
+An HLS session can offer lower quality levels next to its main one, so
+players on a slow connection switch down instead of stalling.
+
+### When levels are added
+
+Lower levels are only considered when all of these hold:
+
+- the request is `start.m3u8`;
+- the video is encoded, not copied;
+- the encode runs on the software pipeline, that is no GPU accelerator is
+  active (see **Hardware acceleration**);
+- `abr` is not `0`.
+
+The candidate levels come from this ladder:
+
+| Level   | Box       | Video bitrate cap |
+|---------|-----------|-------------------|
+| `1080p` | 1920×1080 | 8000 kbps         |
+| `720p`  | 1280×720  | 3000 kbps         |
+| `480p`  | 854×480   | 1200 kbps         |
+
+- A level's size is the source fitted into its box, as for
+  `videoResolution`, so a 16:9 source gives 852×480 for `480p`.
+- A level is a candidate only if it is shorter than the main output and its
+  `BANDWIDTH` (below) is lower than the main output's.
+
+Which candidates are used depends on `abr`:
+
+| `abr` | Levels |
+|---|---|
+| absent | Candidates are added largest first while the CPU budget allows (below) |
+| `1` | Every candidate, regardless of the budget |
+| `0` | None |
+| anything else | `400` |
+
+**CPU budget.** The main output's preset is chosen first, as in **CPU
+transcoding**. Then each candidate is added if the running load, plus the
+main output's load, plus the loads of the levels added so far and this
+one, stays within **0.75**. A level's load counts only its encoding,
+because decoding, tone mapping, and burn-in are shared:
+
+```
+level load = fps × level pixels / (speed[preset] × B)
+```
+
+It uses the main output's preset. When the capacity is unknown (`x264Preset`
+is not `auto`, or the benchmark has not finished or failed), no levels are
+added unless `abr=1`. The session's load, used for later transcodes and
+reported by `/sloplex/transcoder`, includes its levels.
+
+### Output
+
+- **One ffmpeg process** produces every level. The source is decoded, tone
+  mapped, and has subtitles burned in once, at the main output size. Then
+  the frames are split and scaled down for each level.
+- Every level gets the same key frames every 4 s, so segment `n` covers the
+  same time with identical timestamps in every level. Players can switch at
+  any segment.
+- Each level has its own audio stream, encoded or copied as for the main
+  output.
+- Rate control is as for the main output, plus each level's bitrate cap as
+  `-maxrate`, with `-bufsize` twice that. A `maxVideoBitrate` cap applies
+  to the main output only.
+
+### Playlists
+
+The master playlist lists the main output first, then the levels, largest
+first:
+
+```
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-STREAM-INF:BANDWIDTH=5136640,RESOLUTION=1920x1080
+session/<sid>/base/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=3160000,RESOLUTION=1280x720
+session/<sid>/720p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1360000,RESOLUTION=852x480
+session/<sid>/480p/index.m3u8
+```
+
+- The main output is always named `base`.
+- A level's `BANDWIDTH` is its cap plus 160 kbps for audio.
+- With subtitle renditions (see [streams.md](streams.md)), every variant
+  carries `SUBTITLES="subs"`.
+- `…/session/{sid}/{level}/index.m3u8` and `…/{level}/{n}.ts` behave like
+  the `base` URLs in **Endpoints**. An unknown level returns `404`.
+- **Throttling** measures the main output's playlist against the highest
+  segment requested in any level.
+- `/transcode/sessions` and the `decision` endpoint describe the main
+  output.
+
 ## Lifecycle (sloplex)
 
 - An HLS session with no activity for 2 minutes is stopped and its directory
@@ -552,7 +658,11 @@ transcode:
   are tone mapped on the CPU.
 - Dolby Vision profile 5, which has no HDR10 base layer, is not tone mapped
   correctly.
-- Adaptive bitrate ladders.
+- Adaptive quality levels with hardware encoding; with an active GPU
+  accelerator, sessions have one level.
+- Starting a level's encoder only when a player first asks for it. Encoders
+  that restart mid-stream need exactly matching timestamps, which stock
+  ffmpeg does not give across restarts.
 - Changing the preset of a running transcode as the load changes.
 - Splitting decoding and encoding into separate processes. With ffmpeg 6.x,
   this gained 5–15% by overlapping work that the ffmpeg 6 CLI runs on one

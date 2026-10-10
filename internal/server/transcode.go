@@ -26,7 +26,7 @@ func (s *Server) transcodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+transcodeBase+"/start.mp4", s.handleTranscodeMP4)
 	mux.HandleFunc("GET "+transcodeBase+"/start.webm", s.handleTranscodeWebM)
 	mux.HandleFunc("GET "+transcodeBase+"/decision", s.handleTranscodeDecision)
-	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/base/{file}", s.handleTranscodeFile)
+	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/{level}/{file}", s.handleTranscodeFile)
 	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/subs/{stream}/{file}", s.handleTranscodeSubs)
 	for _, m := range []string{"GET ", "PUT "} {
 		mux.HandleFunc(m+transcodeBase+"/stop", s.handleTranscodeStop)
@@ -86,6 +86,16 @@ func (s *Server) transcodeTarget(w http.ResponseWriter, r *http.Request) (librar
 			return library.Item{}, transcode.Request{}, false
 		}
 		req.MaxBitrate = br
+	}
+	switch q.Get("abr") {
+	case "":
+	case "0":
+		req.ABR = transcode.ABROff
+	case "1":
+		req.ABR = transcode.ABROn
+	default:
+		http.Error(w, "abr must be 0 or 1", http.StatusBadRequest)
+		return library.Item{}, transcode.Request{}, false
 	}
 	if !s.applyStreams(w, r, media.Parts[pi], &req) {
 		return library.Item{}, transcode.Request{}, false
@@ -203,6 +213,15 @@ func (s *Server) handleTranscodeHLS(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `,SUBTITLES="subs"`)
 	}
 	fmt.Fprintf(w, "\nsession/%s/base/index.m3u8\n", sess.ID)
+	// Lower quality levels; see "Adaptive quality levels" in
+	// docs/spec/transcode.md.
+	for _, l := range p.Levels {
+		fmt.Fprintf(w, "#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d", l.Bandwidth, l.Width, l.Height)
+		if len(renditions) > 0 {
+			fmt.Fprint(w, `,SUBTITLES="subs"`)
+		}
+		fmt.Fprintf(w, "\nsession/%s/%s/index.m3u8\n", sess.ID, l.Name)
+	}
 }
 
 // subtitleRenditions lists a part's text subtitles as HLS WebVTT
@@ -283,7 +302,7 @@ func (s *Server) handleTranscodeSubs(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:%d\n#EXT-X-MEDIA-SEQUENCE:0\n"+
 			"#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:%d.000,\nsubs.vtt\n#EXT-X-ENDLIST\n", int(dur), int(dur))
 	case "subs.vtt":
-		seg, err := s.tc.Segment(r.Context(), sess, "00000.ts")
+		seg, err := s.tc.Segment(r.Context(), sess, "base", "00000.ts")
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -331,11 +350,11 @@ func (s *Server) handleTranscodeFile(w http.ResponseWriter, r *http.Request) {
 	var path, ctype string
 	var err error
 	if file := r.PathValue("file"); file == "index.m3u8" {
-		path, err = s.tc.Playlist(r.Context(), sess)
+		path, err = s.tc.Playlist(r.Context(), sess, r.PathValue("level"))
 		ctype = "application/vnd.apple.mpegurl"
 		w.Header().Set("Cache-Control", "no-cache")
 	} else {
-		path, err = s.tc.Segment(r.Context(), sess, file)
+		path, err = s.tc.Segment(r.Context(), sess, r.PathValue("level"), file)
 		ctype = "video/mp2t"
 	}
 	switch {

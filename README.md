@@ -36,7 +36,7 @@ Sloplex is a standalone product:
 | Playlists                          | ✅ per user; add movies, episodes, seasons or whole shows; reorder; play all |
 | Collections                        | ✅ automatic from `.nfo` movie sets; manual ones through the admin API |
 | Local metadata (`.nfo`)            | ✅ summaries, ratings, genres, cast, sort titles; read from files, never fetched online |
-| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
+| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264; adaptive HLS quality levels |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
 | CPU-only transcoding               | ✅ tone mapping at output size, benchmark-driven adaptive x264 preset, HLS throttling |
@@ -216,7 +216,7 @@ Set `"hwaccel": "none"` to always use software.
 
 ### CPU-only transcoding
 
-Without a GPU, Sloplex does three things to keep playback smooth:
+Without a GPU, Sloplex does four things to keep playback smooth:
 
 - **HDR tone mapping at the output size.** When downscaling, the picture
   is resized before the expensive tone-mapping math. Savings depend on
@@ -232,6 +232,14 @@ Without a GPU, Sloplex does three things to keep playback smooth:
 - **Throttling.** An HLS transcode that gets more than 90 s ahead of the
   player is paused until the lead falls to 45 s. This leaves the CPU free
   for other streams.
+- **Adaptive quality levels, only when affordable.** An HLS stream that is
+  being re-encoded can also offer 1080p, 720p, and 480p versions, so
+  players drop to a lower quality on a slow connection instead of
+  stalling. One ffmpeg process decodes once and encodes every level.
+  Levels are added only while the estimated CPU load stays within budget,
+  so a busy server keeps streams single-level. Clients can pass `abr=0`
+  to turn levels off, or `abr=1` to always get them. Copied video, and
+  encoding on a GPU, stay single-level.
 
 A preset-matched synthetic 4K-to-1080p benchmark on the integration
 machine took 5.586 s before output-size tone mapping and 1.673 s after

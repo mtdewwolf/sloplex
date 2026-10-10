@@ -1,6 +1,7 @@
 package transcode
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -150,6 +151,30 @@ func (c Capacity) load(src probe.Info, p Plan, preset string, encode bool) float
 		encoding = out / (enc * bench)
 	}
 	return fps * (encoding + (in*decode+out*extra)/(ref*bench))
+}
+
+// LevelLoad estimates the encoding load of one lower quality level at a
+// preset; decoding and filters are shared with the main output. It is 0
+// when the capacity is unknown.
+func (c Capacity) LevelLoad(src probe.Info, l Level, preset string) float64 {
+	enc := c[cmp.Or(preset, DefaultPreset)]
+	if enc <= 0 {
+		return 0
+	}
+	fps := src.FrameRate
+	if fps <= 0 {
+		fps = defaultFrameRate
+	}
+	return fps * float64(l.Width*l.Height) / (enc * float64(benchW*benchH))
+}
+
+// LevelsLoad is the total load of a plan's lower quality levels.
+func (c Capacity) LevelsLoad(src probe.Info, p Plan) float64 {
+	total := 0.0
+	for _, l := range p.Levels {
+		total += c.LevelLoad(src, l, p.Preset)
+	}
+	return total
 }
 
 // ChoosePreset returns the best-quality preset whose load, added to the

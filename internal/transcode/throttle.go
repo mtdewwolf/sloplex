@@ -24,7 +24,8 @@ const (
 // ahead is how much media the session has produced beyond the newest
 // segment requested.
 func (s *Session) ahead() time.Duration {
-	f, err := os.Open(filepath.Join(s.dir, "index.m3u8"))
+	dir, _ := s.LevelDir("base")
+	f, err := os.Open(filepath.Join(dir, "index.m3u8"))
 	if err != nil {
 		return 0
 	}
