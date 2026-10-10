@@ -92,6 +92,20 @@ token as a query parameter.
   10 s back or forward from the latest target, Home and End seek to the
   start and the end, `m` mutes, `f` toggles full screen.
 
+### Playlists
+
+See [playlists.md](playlists.md).
+
+- **Playlists** in the navigation lists the account's playlists, with their
+  item count and length. It can create and delete playlists.
+- Movie and episode pages have an **Add to playlist** menu: one of the
+  account's playlists, or a new one, named in a prompt.
+- A playlist page lists its entries. Each can be moved up or down, or
+  removed. The playlist can be renamed.
+- **Play all** plays the entries in order, each from its start, and moves
+  on when one ends. The current entry is highlighted. Playback follows the
+  same rules as playing an item directly, including converting.
+
 ### Account
 
 - Change the password.

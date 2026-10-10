@@ -307,8 +307,123 @@ async function viewItem(id) {
             text: item.viewOffset > 0 ? `Resume from ${fmtClock(item.viewOffset)}` : "Play",
             onclick: () => { active = play(player, item, part, tracks.choice(), (item.viewOffset || 0) / 1000); },
           }) : null,
-          watchButtons(item, () => viewItem(id))),
+          watchButtons(item, () => viewItem(id)),
+          playlistPicker(item)),
         player)));
+}
+
+// playlistPicker adds an item to one of the account's playlists, or to a
+// new one (see docs/spec/playlists.md).
+function playlistPicker(item) {
+  const sel = el("select", { "aria-label": "Add to playlist" },
+    el("option", { value: "", text: "Add to playlist…" }),
+    el("option", { value: "new", text: "New playlist…" }));
+  api("GET", "/playlists").then((data) => {
+    for (const p of container(data).Metadata || []) sel.append(el("option", { value: p.ratingKey, text: p.title }));
+  }).catch(() => {});
+  sel.addEventListener("change", async () => {
+    const choice = sel.value;
+    sel.value = "";
+    try {
+      if (choice === "new") {
+        const title = (prompt("Name of the new playlist") || "").trim();
+        if (!title) return;
+        const p = container(await api("POST", "/playlists?" + new URLSearchParams({ type: "video", title, ids: item.ratingKey }))).Metadata[0];
+        sel.append(el("option", { value: p.ratingKey, text: p.title }));
+        toast(`Added to ${p.title}`);
+      } else if (choice) {
+        const p = container(await api("PUT", `/playlists/${choice}/items?` + new URLSearchParams({ ids: item.ratingKey }))).Metadata[0];
+        toast(`Added to ${p.title}`);
+      }
+    } catch (ex) { fail(ex); }
+  });
+  return sel;
+}
+
+async function viewPlaylists() {
+  const lists = container(await api("GET", "/playlists")).Metadata || [];
+  const title = el("input", { name: "title", required: true, maxlength: 200, placeholder: "New playlist name", "aria-label": "New playlist name" });
+  const form = el("form", {
+    class: "row",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      await api("POST", "/playlists?" + new URLSearchParams({ type: "video", title: title.value.trim() })).catch(fail);
+      viewPlaylists();
+    },
+  }, title, el("button", { class: "primary", type: "submit", text: "Create" }));
+  render(
+    el("h1", { text: "Playlists" }),
+    form,
+    lists.length ? el("table", { class: "playlists" },
+      el("tr", {}, el("th", { text: "Name" }), el("th", { text: "Items" }), el("th", { text: "Length" }), el("th")),
+      lists.map((p) => el("tr", {},
+        el("td", {}, el("a", { href: `#/playlist/${p.ratingKey}`, text: p.title })),
+        el("td", { text: String(p.leafCount || 0) }),
+        el("td", { text: fmtDuration(p.duration) }),
+        el("td", {}, el("button", {
+          class: "danger", type: "button", text: "Delete",
+          onclick: async () => {
+            if (!confirm(`Delete the playlist ${p.title}?`)) return;
+            await api("DELETE", `/playlists/${p.ratingKey}`).catch(fail);
+            viewPlaylists();
+          },
+        })))))
+      : el("p", { class: "muted", text: "No playlists yet. Create one here, or use “Add to playlist” on a movie or episode." }));
+}
+
+async function viewPlaylist(id) {
+  const key = `/playlists/${encodeURIComponent(id)}`;
+  const [meta, data] = await Promise.all([api("GET", key), api("GET", `${key}/items`)]);
+  const pl = container(meta).Metadata[0];
+  const items = container(data).Metadata || [];
+  const player = el("div");
+  const now = el("p", { class: "muted" });
+  // playFrom plays items[i] and moves on to the next when it ends.
+  const playFrom = (i) => {
+    if (i >= items.length) { now.textContent = "Playlist finished."; return; }
+    const it = items[i];
+    const part = it.Media && it.Media[0] && it.Media[0].Part[0];
+    if (!part) { playFrom(i + 1); return; }
+    now.textContent = `Playing ${i + 1} of ${items.length}: ${it.title}`;
+    document.querySelectorAll(".playlist-items li").forEach((li, j) => li.classList.toggle("current", j === i));
+    play(player, it, part, { audio: null, firstAudio: null, sub: null }, 0, { onEnded: () => playFrom(i + 1) });
+  };
+  const move = async (i, to) => {
+    const after = to === 0 ? 0 : items[to < i ? to - 1 : to].playlistItemID;
+    await api("PUT", `${key}/items/${items[i].playlistItemID}/move?after=${after}`).catch(fail);
+    viewPlaylist(id);
+  };
+  const label = (it) => it.type === "episode" ? `${it.grandparentTitle} · ${episodeLabel(it)} · ${it.title}` : `${it.title}${it.year ? ` (${it.year})` : ""}`;
+  render(
+    el("h1", { text: pl.title }),
+    el("p", { class: "muted", text: `${pl.leafCount || 0} items · ${fmtDuration(pl.duration) || "0 s"}` }),
+    el("div", { class: "row" },
+      items.length ? el("button", { class: "primary", type: "button", text: "Play all", onclick: () => playFrom(0) }) : null,
+      el("button", {
+        type: "button", text: "Rename",
+        onclick: async () => {
+          const title = (prompt("New name", pl.title) || "").trim();
+          if (!title) return;
+          await api("PUT", `${key}?` + new URLSearchParams({ title })).catch(fail);
+          viewPlaylist(id);
+        },
+      })),
+    now,
+    player,
+    items.length ? el("ol", { class: "playlist-items" }, items.map((it, i) => el("li", {},
+      el("a", { href: `#/item/${it.ratingKey}`, text: label(it) }),
+      el("span", { class: "muted", text: fmtDuration(it.duration) }),
+      el("span", { class: "row" },
+        el("button", { type: "button", text: "▲", "aria-label": "Move up", disabled: i === 0, onclick: () => move(i, i - 1) }),
+        el("button", { type: "button", text: "▼", "aria-label": "Move down", disabled: i === items.length - 1, onclick: () => move(i, i + 1) }),
+        el("button", {
+          class: "danger", type: "button", text: "✕", "aria-label": "Remove",
+          onclick: async () => {
+            await api("DELETE", `${key}/items/${it.playlistItemID}`).catch(fail);
+            viewPlaylist(id);
+          },
+        })))))
+      : el("p", { class: "muted", text: "This playlist is empty. Use “Add to playlist” on a movie or episode." }));
 }
 
 // castList shows up to 12 cast members and the characters they play.
@@ -383,7 +498,7 @@ function watchButtons(item, refresh) {
 // A converted stream starts at `base` seconds of the source, so it gets its
 // own controls: the seek bar spans the whole item, seeks inside what has
 // already arrived stay in the stream, and other seeks restart it there.
-function play(holder, item, part, choice, startAt = 0) {
+function play(holder, item, part, choice, startAt = 0, opts = {}) {
   const video = el("video", { controls: true, autoplay: true, preload: "metadata" });
   const wrap = el("div", { class: "player" }, video);
   const textSub = choice.sub && choice.sub.key ? choice.sub : null;
@@ -519,7 +634,10 @@ function play(holder, item, part, choice, startAt = 0) {
     if (Date.now() - last > 10000) { last = Date.now(); report("playing"); }
   });
   video.addEventListener("pause", () => report("paused"));
-  video.addEventListener("ended", () => report("stopped"));
+  video.addEventListener("ended", () => {
+    report("stopped");
+    if (opts.onEnded) opts.onEnded();
+  });
   video.addEventListener("error", () => {
     // Some browser builds (e.g. Chromium without proprietary codecs) play
     // neither the file nor H.264; those get WebM.
@@ -774,6 +892,8 @@ async function route() {
       case "item": await viewItem(parts[1]); break;
       case "search": await viewSearch(new URLSearchParams(qs).get("q") || ""); break;
       case "account": await viewAccount(); break;
+      case "playlists": await viewPlaylists(); break;
+      case "playlist": await viewPlaylist(parts[1]); break;
       case "admin": await viewAdmin(); break;
       default: await viewLibrary();
     }

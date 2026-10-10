@@ -166,3 +166,9 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .cast ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; }
 .cast { margin-bottom: 12px; }
 .cast h2 { margin-top: 16px; }
+.playlist-items { padding-left: 24px; }
+.playlist-items li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.playlist-items li > * { margin-right: 12px; }
+.playlist-items li.current a { color: var(--accent); font-weight: 600; }
+.playlist-items button { padding: 2px 8px; min-width: 32px; }
+.playlist-items li .row { display: inline-flex; vertical-align: middle; gap: 4px; }

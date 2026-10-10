@@ -33,6 +33,7 @@ Sloplex is a standalone product:
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
 | Date-based TV episodes             | ✅ `Show - 2024-03-15.mkv`, seasons by year |
 | Music                              | ⏳                                       |
+| Playlists                          | ✅ per user; add movies, episodes, seasons or whole shows; reorder; play all |
 | Collections                        | ✅ automatic from `.nfo` movie sets; manual ones through the admin API |
 | Local metadata (`.nfo`)            | ✅ summaries, ratings, genres, cast, sort titles; read from files, never fetched online |
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
@@ -74,6 +75,7 @@ yourself; this repository does not publish a container image.
 Open `http://<server>:32400/web/` in a browser and sign in. The app lets you:
 
 - browse libraries, search, and play;
+- keep your own playlists and play them straight through;
 - use On Deck and mark items watched or unwatched;
 - change your password and sign out devices.
 
@@ -243,7 +245,7 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 |-------------------|----------------|-----------------------------------------------------------|
 | `friendlyName`    | hostname       | The name shown to clients                                 |
 | `listen`          | `:32400`       | HTTP listen address                                       |
-| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `cache/` |
+| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `playlists.json`, `cache/` |
 | `discovery`       | `true`         | Answer GDM searches on UDP 32414                          |
 | `tokens`          | `[]`           | Extra owner master tokens                                 |
 | `allowedNetworks` | `[]`           | CIDRs that may skip tokens; tokenless requests act as the owner |
@@ -268,6 +270,7 @@ internal/accounts/  user accounts, password hashes, issued tokens
 internal/library/   section/item store, filename parsing, scanner, automatic scans
 internal/fswatch/   folder watching (inotify)
 internal/playstate/ per-account watched/resume state
+internal/playlists/ per-account playlists
 internal/probe/     ffprobe wrapper
 internal/artwork/   frame grabs and cached image resizing
 internal/search/    query folding and scoring

@@ -373,6 +373,9 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	if err := s.play.DeleteAccount(id); err != nil {
 		s.log.Error("delete play state", "account", id, "err", err)
 	}
+	if err := s.playlists.DeleteAccount(id); err != nil {
+		s.log.Error("delete playlists", "account", id, "err", err)
+	}
 	s.log.Info("account deleted", "id", id)
 	w.WriteHeader(http.StatusNoContent)
 }

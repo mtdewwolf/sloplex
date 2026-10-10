@@ -19,6 +19,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/accounts"
 	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
+	"github.com/mtdewwolf/sloplex/internal/playlists"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
@@ -43,22 +44,25 @@ type Deps struct {
 	Accounts   *accounts.Store
 	Transcoder *transcode.Manager
 	Subtitles  *subtitles.Service
-	Log        *slog.Logger // optional
+	// Playlists is optional; without it playlists are kept in memory.
+	Playlists *playlists.Store
+	Log       *slog.Logger // optional
 }
 
 // Server serves the HTTP API.
 type Server struct {
-	opts     Options
-	store    *library.Store
-	scanner  *library.Scanner
-	play     *playstate.Store
-	art      *artwork.Service
-	accounts *accounts.Store
-	tc       *transcode.Manager
-	subs     *subtitles.Service
-	logins   *loginLimiter
-	log      *slog.Logger
-	auth     *authenticator
+	opts      Options
+	store     *library.Store
+	scanner   *library.Scanner
+	play      *playstate.Store
+	art       *artwork.Service
+	accounts  *accounts.Store
+	tc        *transcode.Manager
+	subs      *subtitles.Service
+	playlists *playlists.Store
+	logins    *loginLimiter
+	log       *slog.Logger
+	auth      *authenticator
 	// baseCtx is the parent of background work started by requests, such as
 	// scans, which must outlive the request.
 	baseCtx context.Context
@@ -70,8 +74,12 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	if d.Log == nil {
 		d.Log = slog.New(slog.DiscardHandler)
 	}
+	if d.Playlists == nil {
+		d.Playlists, _ = playlists.Open("") // in memory; cannot fail
+	}
 	return &Server{
-		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
+		playlists: d.Playlists,
+		opts:      opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
 		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts),
 		baseCtx: ctx, started: time.Now(),
@@ -104,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 	s.transcodeRoutes(mux)
 	s.streamRoutes(mux)
 	s.collectionRoutes(mux)
+	s.playlistRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())
 	mux.HandleFunc("GET /web", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)

@@ -209,7 +209,8 @@ Request: any of
 
 ### `DELETE /sloplex/accounts/{id}` (admin)
 
-Deletes the account, its tokens, and its play state, then returns `204`.
+Deletes the account, its tokens, its play state, and its playlists (see
+[playlists.md](playlists.md)), then returns `204`.
 Deleting the owner returns `400`.
 
 ### `GET /sloplex/accounts/{id}/tokens` (admin)

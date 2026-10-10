@@ -24,6 +24,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/gdm"
 	"github.com/mtdewwolf/sloplex/internal/identity"
 	"github.com/mtdewwolf/sloplex/internal/library"
+	"github.com/mtdewwolf/sloplex/internal/playlists"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 	"github.com/mtdewwolf/sloplex/internal/server"
@@ -85,6 +86,10 @@ func run(configPath string, log *slog.Logger) error {
 		return err
 	}
 
+	lists, err := playlists.Open(filepath.Join(cfg.DataDir, "playlists.json"))
+	if err != nil {
+		return err
+	}
 	play, err := playstate.Open(filepath.Join(cfg.DataDir, "playstate.json"))
 	if err != nil {
 		return err
@@ -147,7 +152,7 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Accounts: accts, Transcoder: tc,
+	}, server.Deps{Store: store, Scanner: scanner, Play: play, Playlists: lists, Art: art, Accounts: accts, Transcoder: tc,
 		Subtitles: subtitles.New(ffmpeg, filepath.Join(cfg.DataDir, "cache", "subs")), Log: log})
 
 	started := time.Now().Unix()

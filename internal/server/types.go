@@ -123,6 +123,11 @@ type Metadata struct {
 	Key       string `xml:"key,attr" json:"key"`
 	GUID      string `xml:"guid,attr" json:"guid"`
 	Type      string `xml:"type,attr" json:"type"`
+	// PlaylistType and Smart describe playlists; PlaylistItemID marks an
+	// item's entry in one.
+	PlaylistType   string `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
+	Smart          string `xml:"smart,attr,omitempty" json:"smart,omitempty"`
+	PlaylistItemID int    `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
 	// Subtype and CollectionSource describe collections.
 	Subtype          string `xml:"subtype,attr,omitempty" json:"subtype,omitempty"`
 	CollectionSource string `xml:"collectionSource,attr,omitempty" json:"collectionSource,omitempty"`

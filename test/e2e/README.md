@@ -7,6 +7,7 @@ against a freshly built server and generated test media.
 |---|---|
 | `web` | Sign-in errors, poster grid, playback and resume to On Deck, search, `.nfo` metadata, an `.nfo` collection, the admin page, a Kids-only account, markup in file names rendered as text |
 | `tracks` | Audio and subtitle pickers, sidecar and embedded subtitles as text tracks, a transcode for a non-first audio track, persisted choices |
+| `playlists` | Creating a playlist, adding movies from their pages, reordering, playing straight through to the next item, removing an entry |
 | `transcode` | Fallback from undecodable files to a WebM conversion (MP4 when H.264 is reported), the converted-mode controls: full-length seek bar, restart on seek, debounced keys, pause kept, source-time timeline reports; the message for browsers with neither codec |
 
 Every suite fails on page errors, console errors, unexpected dialogs, and
