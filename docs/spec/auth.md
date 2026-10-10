@@ -36,6 +36,9 @@ These requests never require a token:
 - `POST /sloplex/auth/login`;
 - `GET /web/` and everything under it (static app files; see
   [web.md](web.md));
+- transcode session URLs under `/video/:/transcode/universal/session/`.
+  They are authorised by their random session ID; see
+  [transcode.md](transcode.md);
 - `OPTIONS` (CORS preflight) requests.
 
 Requests whose remote address falls in a CIDR from the config list

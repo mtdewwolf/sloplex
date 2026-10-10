@@ -48,8 +48,10 @@ token as a query parameter.
   `<video>` element:
   - The resume point is the item's `viewOffset`.
   - Progress is reported with `/:/timeline` every 10 s and on pause or end.
-  - Only formats the browser can decode play, since there is no transcoding
-    yet.
+  - If the browser cannot decode the file, the app switches to
+    `start.mp4` (see [transcode.md](transcode.md)) at the current position.
+    In that mode, seeking restarts the stream at the new position, and
+    reported times add the stream's start offset.
 
 ### Account
 

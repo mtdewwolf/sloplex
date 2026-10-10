@@ -26,6 +26,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 	"github.com/mtdewwolf/sloplex/internal/server"
+	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -110,6 +111,11 @@ func run(configPath string, log *slog.Logger) error {
 		}
 	}
 	art := artwork.New(filepath.Join(cfg.DataDir, "cache"), ffmpeg)
+	tc, err := transcode.New(ffmpeg, filepath.Join(cfg.DataDir, "transcode"), cfg.MaxTranscodes, log)
+	if err != nil {
+		return err
+	}
+	defer tc.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -126,7 +132,7 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Accounts: accts, Log: log})
+	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Accounts: accts, Transcoder: tc, Log: log})
 
 	started := time.Now().Unix()
 	if cfg.Discovery {

@@ -82,7 +82,12 @@ func (a *authenticator) isPublic(path string) bool {
 	}
 	// Refuse dot segments outright rather than relying on the router to
 	// clean "/web/../library" before it reaches a handler.
-	return (path == "/web" || strings.HasPrefix(path, "/web/")) && !strings.Contains(path, "..")
+	if strings.Contains(path, "..") {
+		return false
+	}
+	// Transcode session URLs are authorised by their random session ID.
+	return path == "/web" || strings.HasPrefix(path, "/web/") ||
+		strings.HasPrefix(path, "/video/:/transcode/universal/session/")
 }
 
 // resolve returns the principal for a request's token, if valid.

@@ -293,20 +293,39 @@ function watchButtons(item, refresh) {
   ];
 }
 
+// play direct-plays a part and falls back to a transcoded MP4 stream (see
+// docs/spec/transcode.md) when the browser cannot decode it. In transcoded
+// mode the stream starts at `base` seconds, so positions add it back and
+// seeking restarts the stream.
 function play(holder, item, part) {
-  const video = el("video", { controls: true, autoplay: true, preload: "metadata", src: withToken(part.key) });
+  const video = el("video", { controls: true, autoplay: true, preload: "metadata" });
+  let transcoding = false;
+  let restarting = false;
+  let base = 0;
   let last = 0;
+  const position = () => base + (video.currentTime || 0);
+  const durationMs = () => (transcoding ? 0 : Math.floor((video.duration || 0) * 1000)) || item.duration || 0;
   const report = (st) => {
-    const t = Math.floor(video.currentTime * 1000);
+    const t = Math.floor(position() * 1000);
     if (!t) return;
-    const q = new URLSearchParams({
-      ratingKey: item.ratingKey, key: item.key, state: st, time: t,
-      duration: Math.floor((video.duration || 0) * 1000) || item.duration || 0,
-    });
+    const q = new URLSearchParams({ ratingKey: item.ratingKey, key: item.key, state: st, time: t, duration: durationMs() });
     api("GET", "/:/timeline?" + q).catch(() => {});
   };
+  const startTranscode = (at) => {
+    transcoding = true;
+    restarting = true;
+    base = Math.max(0, at);
+    const q = new URLSearchParams({ path: item.key, offset: base.toFixed(1) });
+    video.src = withToken("/video/:/transcode/universal/start.mp4?" + q);
+    video.play().catch(() => {});
+  };
+
   video.addEventListener("loadedmetadata", () => {
-    if (item.viewOffset > 0) video.currentTime = item.viewOffset / 1000;
+    if (!transcoding && item.viewOffset > 0) video.currentTime = item.viewOffset / 1000;
+    restarting = false;
+  });
+  video.addEventListener("seeking", () => {
+    if (transcoding && !restarting) startTranscode(position());
   });
   video.addEventListener("timeupdate", () => {
     if (Date.now() - last > 10000) { last = Date.now(); report("playing"); }
@@ -314,8 +333,22 @@ function play(holder, item, part) {
   video.addEventListener("pause", () => report("paused"));
   video.addEventListener("ended", () => report("stopped"));
   video.addEventListener("error", () => {
-    holder.replaceChildren(el("p", { class: "error", text: "This browser cannot play this file's format. Transcoding is not available yet." }));
+    // Transcodes are H.264/AAC; some browser builds (e.g. Chromium without
+    // proprietary codecs) cannot play them either.
+    const h264 = video.canPlayType('video/mp4; codecs="avc1.640028, mp4a.40.2"') !== "";
+    if (!transcoding && !h264) {
+      holder.replaceChildren(el("p", { class: "error", text: "This browser cannot play this file, and it cannot play H.264 video, which is what Sloplex converts to." }));
+      return;
+    }
+    if (!transcoding) {
+      const resumeAt = video.currentTime > 0 ? video.currentTime : (item.viewOffset || 0) / 1000;
+      toast("Converting this file for your browser…");
+      startTranscode(resumeAt);
+      return;
+    }
+    holder.replaceChildren(el("p", { class: "error", text: "This file could not be played, even after converting it." }));
   });
+  video.src = withToken(part.key);
   holder.replaceChildren(video);
 }
 

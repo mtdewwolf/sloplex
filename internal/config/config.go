@@ -33,8 +33,10 @@ type Config struct {
 	FFprobe string `json:"ffprobe"`
 	// FFmpeg is the ffmpeg binary used for thumbnails: "" looks it up on
 	// PATH, "-" disables it.
-	FFmpeg    string    `json:"ffmpeg"`
-	Libraries []Library `json:"libraries"`
+	FFmpeg string `json:"ffmpeg"`
+	// MaxTranscodes limits concurrent transcodes.
+	MaxTranscodes int       `json:"maxTranscodes"`
+	Libraries     []Library `json:"libraries"`
 }
 
 // SupportedTypes lists the library types the server can scan.
@@ -47,10 +49,11 @@ func Default() Config {
 		name = "sloplex"
 	}
 	return Config{
-		FriendlyName: name,
-		Listen:       ":32400",
-		DataDir:      "data",
-		Discovery:    true,
+		FriendlyName:  name,
+		Listen:        ":32400",
+		DataDir:       "data",
+		Discovery:     true,
+		MaxTranscodes: 2,
 	}
 }
 
@@ -86,6 +89,9 @@ func (c Config) Validate() error {
 	}
 	if _, err := c.Networks(); err != nil {
 		return err
+	}
+	if c.MaxTranscodes < 1 {
+		return errors.New("maxTranscodes must be at least 1")
 	}
 	seen := map[string]bool{}
 	for i, lib := range c.Libraries {

@@ -34,6 +34,21 @@ type MediaContainer struct {
 	Metadata []Metadata    `json:"Metadata,omitempty"`
 	Account  []AccountElem `xml:"Account" json:"Account,omitempty"`
 	Hub      []Hub         `xml:"Hub" json:"Hub,omitempty"`
+
+	TranscodeSession []TranscodeSession `xml:"TranscodeSession" json:"TranscodeSession,omitempty"`
+}
+
+// TranscodeSession describes a running transcode; see
+// docs/spec/transcode.md.
+type TranscodeSession struct {
+	Key           string `xml:"key,attr" json:"key"`
+	RatingKey     string `xml:"ratingKey,attr" json:"ratingKey"`
+	Protocol      string `xml:"protocol,attr" json:"protocol"`
+	VideoDecision string `xml:"videoDecision,attr" json:"videoDecision"`
+	AudioDecision string `xml:"audioDecision,attr" json:"audioDecision"`
+	Width         int    `xml:"width,attr,omitempty" json:"width,omitempty"`
+	Height        int    `xml:"height,attr,omitempty" json:"height,omitempty"`
+	Complete      Bool   `xml:"complete,attr" json:"complete"`
 }
 
 // Hub groups search results of one type; see docs/spec/search.md.
@@ -175,7 +190,7 @@ func wantsJSON(r *http.Request) bool {
 
 // writeContainer encodes mc as XML or JSON according to the Accept header.
 func writeContainer(w http.ResponseWriter, r *http.Request, mc MediaContainer) {
-	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account) + len(mc.Hub)
+	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account) + len(mc.Hub) + len(mc.TranscodeSession)
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(struct {

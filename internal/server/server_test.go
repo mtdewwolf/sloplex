@@ -19,6 +19,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
+	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
 func mustPlay(t *testing.T) *playstate.Store {
@@ -82,7 +83,12 @@ func startServer(t *testing.T, opts Options, store *library.Store, sc *library.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art, Accounts: accts}).Handler())
+	tc, err := transcode.New(ffmpeg, filepath.Join(t.TempDir(), "transcode"), 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(tc.Close)
+	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art, Accounts: accts, Transcoder: tc}).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }

@@ -33,7 +33,8 @@ Sloplex is a standalone product:
 | Date-based TV episodes             | ⏳                                       |
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
-| Transcoding (HLS/DASH)             | ⏳                                       |
+| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC (software, libx264) |
+| Hardware transcoding, subtitles in transcodes | ⏳                            |
 
 ## Quick start
 
@@ -68,8 +69,8 @@ Open `http://<server>:32400/web/` in a browser and sign in. The app lets you:
 Admins also get an Admin page for managing accounts, library access, device
 tokens, and library refreshes.
 
-The browser plays files directly, so only formats it can decode will play,
-typically MP4/H.264 and WebM.
+Files the browser can decode play directly. Anything else is converted on
+the fly to H.264/AAC, which needs ffmpeg.
 
 ### Users
 
@@ -118,7 +119,10 @@ Install ffmpeg (which includes `ffprobe`) to get two extras:
 
 - duration, codec, and resolution details. Without `ffprobe`, Sloplex
   reports only the container.
-- generated thumbnails for episodes that have no image.
+- generated thumbnails for episodes that have no image;
+- transcoding for clients that can't play a file as it is. Clients use
+  `/video/:/transcode/universal/start.m3u8` (HLS) or `start.mp4`; see
+  [docs/spec/transcode.md](docs/spec/transcode.md).
 
 ## Configuration
 
@@ -131,7 +135,8 @@ Install ffmpeg (which includes `ffprobe`) to get two extras:
 | `tokens`          | `[]`           | Extra owner master tokens                                 |
 | `allowedNetworks` | `[]`           | CIDRs that may skip tokens; tokenless requests act as the owner |
 | `ffprobe`         | `""`           | ffprobe path; `""` searches `PATH`, `"-"` disables probing |
-| `ffmpeg`          | `""`           | ffmpeg path for episode thumbnails; `""` searches `PATH`, `"-"` disables |
+| `ffmpeg`          | `""`           | ffmpeg path for transcoding and episode thumbnails; `""` searches `PATH`, `"-"` disables |
+| `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout
@@ -147,6 +152,7 @@ internal/probe/     ffprobe wrapper
 internal/artwork/   frame grabs and cached image resizing
 internal/search/    query folding and scoring
 internal/web/       built-in web app (embedded static files)
+internal/transcode/ ffmpeg HLS/MP4 transcoding sessions
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder
 docs/spec/          the clean-room protocol specification
