@@ -1,0 +1,11 @@
+# Allow only compilation inputs and the non-secret container defaults.
+**
+!go.mod
+!cmd/
+!cmd/**
+!internal/
+!internal/**
+!deploy/
+!deploy/sloplex.container.json
+!Dockerfile
+!.dockerignore

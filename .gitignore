@@ -4,3 +4,5 @@
 *.test
 *.out
 node_modules/
+/deploy/.env
+/deploy/compose.rendered.yaml

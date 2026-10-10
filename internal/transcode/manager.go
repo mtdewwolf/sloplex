@@ -131,7 +131,7 @@ func New(o Options) (*Manager, error) {
 	if o.MaxTranscodes < 1 {
 		o.MaxTranscodes = 1
 	}
-	if err := os.RemoveAll(o.Dir); err != nil {
+	if err := clearSessionDirectory(o.Dir); err != nil {
 		return nil, err
 	}
 	m := &Manager{
@@ -145,6 +145,32 @@ func New(o Options) (*Manager, error) {
 	m.wg.Add(1)
 	go m.reaper()
 	return m, nil
+}
+
+// clearSessionDirectory removes stale sessions without removing the directory
+// itself: deployments may mount dedicated scratch storage at this path.
+// Do not follow a symlink at the root or among its children.
+func clearSessionDirectory(dir string) error {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return os.Remove(dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetIdleTimeout changes how long an untouched session survives. For tests.
@@ -479,7 +505,7 @@ func (m *Manager) reaper() {
 	}
 }
 
-// Close stops every transcode and removes the working directory.
+// Close stops every transcode and clears the working directory contents.
 func (m *Manager) Close() {
 	m.mu.Lock()
 	if m.closed {
@@ -496,7 +522,7 @@ func (m *Manager) Close() {
 	close(m.stop)
 	m.wg.Wait()
 	m.cleanup(all)
-	os.RemoveAll(m.dir)
+	clearSessionDirectory(m.dir)
 }
 
 var segmentRE = regexp.MustCompile(`^\d{5}\.ts$`)

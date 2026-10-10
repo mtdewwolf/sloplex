@@ -53,3 +53,13 @@ jobs:
           path: |
             ${{ runner.temp }}/sloplex-e2e/shots
             ${{ runner.temp }}/sloplex-e2e/*.log
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CPU image (local only, no registry publication)
+        run: docker build --build-arg VERSION="${GITHUB_SHA}" -t sloplex:ci .
+      - name: Exercise Compose security, media tools, auth and persistence
+        run: python3 test/container/smoke.py sloplex:ci
