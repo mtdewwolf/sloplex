@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
+	"github.com/mtdewwolf/sloplex/internal/probe"
 )
 
 func writePNG(t *testing.T, path string, w, h int) {
@@ -39,7 +41,8 @@ func writePNG(t *testing.T, path string, w, h int) {
 }
 
 // newArtFixture builds a movie and a TV section with artwork. When ffmpeg is
-// installed, the second episode is a real clip so frame grabs can run.
+// installed, the second episode and a movie without images, Ronin, are real
+// clips so images can be generated.
 func newArtFixture(t *testing.T) (*fixture, bool) {
 	t.Helper()
 	root := t.TempDir()
@@ -60,18 +63,23 @@ func newArtFixture(t *testing.T) (*fixture, bool) {
 			t.Fatal(err)
 		}
 	}
-	ep2 := filepath.Join(tv, "Lost", "Season 01", "Lost - S01E02.mkv")
+	clips := []string{filepath.Join(tv, "Lost", "Season 01", "Lost - S01E02.mkv"), filepath.Join(movies, "Ronin (1998).mkv")}
 	ffmpeg, _ := exec.LookPath("ffmpeg")
-	if ffmpeg != "" {
+	for _, c := range clips {
+		if ffmpeg == "" {
+			break
+		}
 		if out, err := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x180:duration=1:rate=5",
-			"-c:v", "mpeg4", ep2).CombinedOutput(); err != nil {
-			t.Logf("ffmpeg clip failed, disabling frame grabs: %v %s", err, out)
+			"-c:v", "mpeg4", c).CombinedOutput(); err != nil {
+			t.Logf("ffmpeg clip failed, disabling generated images: %v %s", err, out)
 			ffmpeg = ""
 		}
 	}
 	if ffmpeg == "" {
-		if err := os.WriteFile(ep2, []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
+		for _, c := range clips {
+			if err := os.WriteFile(c, []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 
@@ -97,9 +105,15 @@ func newArtFixture(t *testing.T) (*fixture, bool) {
 
 func TestArtworkAttributes(t *testing.T) {
 	f, canGrab := newArtFixture(t)
-	heat := f.getJSON(t, "/library/sections/1/all").Metadata[0]
-	if !strings.HasPrefix(heat.Thumb, "/library/metadata/"+heat.RatingKey+"/thumb/") || heat.Art != "" || heat.Banner != "" {
-		t.Errorf("movie images = %q %q %q", heat.Thumb, heat.Art, heat.Banner)
+	movies := f.getJSON(t, "/library/sections/1/all").Metadata
+	heat, ronin := movies[0], movies[1]
+	// Heat has a local poster and, with ffmpeg, a generated background.
+	if !strings.HasPrefix(heat.Thumb, "/library/metadata/"+heat.RatingKey+"/thumb/") || heat.Banner != "" ||
+		canGrab != strings.HasPrefix(heat.Art, "/library/metadata/"+heat.RatingKey+"/art/") || !canGrab && heat.Art != "" {
+		t.Errorf("movie images = %q %q %q with ffmpeg=%v", heat.Thumb, heat.Art, heat.Banner, canGrab)
+	}
+	if canGrab != (ronin.Thumb != "" && ronin.Art != "") || !canGrab && (ronin.Thumb != "" || ronin.Art != "") {
+		t.Errorf("generated movie images = %q %q with ffmpeg=%v", ronin.Thumb, ronin.Art, canGrab)
 	}
 
 	lost := f.getJSON(t, "/library/sections/2/all").Metadata[0]
@@ -150,13 +164,31 @@ func TestImageEndpoints(t *testing.T) {
 	}
 
 	if canGrab {
+		movies := f.getJSON(t, "/library/sections/1/all").Metadata
 		e2 := f.getJSON(t, season.Key).Metadata[1]
-		resp := f.get(t, e2.Thumb, nil)
-		if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/jpeg" {
-			t.Fatalf("generated thumb: %s %v", resp.Status, resp.Header)
+		for _, c := range []struct {
+			name, url string
+			w, h      int
+		}{
+			{"episode thumb", e2.Thumb, 640, 360},
+			{"movie poster", movies[1].Thumb, 600, 900},
+			{"movie background", movies[1].Art, 1280, 720},
+		} {
+			resp := f.get(t, c.url, nil)
+			if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/jpeg" {
+				t.Fatalf("generated %s: %s %v", c.name, resp.Status, resp.Header)
+			}
+			if cfg, err := jpeg.DecodeConfig(resp.Body); err != nil || cfg.Width != c.w || cfg.Height != c.h {
+				t.Errorf("generated %s: %+v %v, want %dx%d", c.name, cfg, err, c.w, c.h)
+			}
 		}
-		if cfg, err := jpeg.DecodeConfig(resp.Body); err != nil || cfg.Width != 640 {
-			t.Errorf("generated thumb body: %+v %v", cfg, err)
+		// A local poster wins over a generated one; a video ffmpeg cannot
+		// read has no generated image.
+		if resp := f.get(t, movies[0].Thumb, nil); resp.Header.Get("Content-Type") != "image/png" {
+			t.Errorf("Heat poster: %s %v", resp.Status, resp.Header)
+		}
+		if resp := f.get(t, movies[0].Art, nil); resp.StatusCode != 404 {
+			t.Errorf("background of an unreadable video: %s", resp.Status)
 		}
 	}
 }
@@ -207,5 +239,36 @@ func TestPhotoTranscode(t *testing.T) {
 		if resp := transcode(params); resp.StatusCode != want {
 			t.Errorf("transcode?%s = %d, want %d", params, resp.StatusCode, want)
 		}
+	}
+}
+
+func TestGeneratedSource(t *testing.T) {
+	s := &Server{art: artwork.New(t.TempDir(), "ffmpeg")}
+	media := []library.Media{{Info: probe.Info{Duration: 7200000, HDR: probe.HDRPQ},
+		Parts: []library.Part{{ID: 9, File: "/m/a.mkv", ModTime: 42}}}}
+	want := artwork.Source{PartID: 9, ModTime: 42, File: "/m/a.mkv", Duration: 7200000, HDR: probe.HDRPQ}
+	for _, c := range []struct {
+		typ, kind string
+		still     artwork.Still
+		ok        bool
+	}{
+		{library.TypeMovie, library.ImageThumb, artwork.MoviePoster, true},
+		{library.TypeMovie, library.ImageArt, artwork.MovieArt, true},
+		{library.TypeEpisode, library.ImageThumb, artwork.EpisodeThumb, true},
+		{library.TypeEpisode, library.ImageArt, 0, false},
+		{library.TypeMovie, library.ImageBanner, 0, false},
+		{library.TypeShow, library.ImageThumb, 0, false},
+	} {
+		still, src, ok := s.generated(library.Item{Type: c.typ, Media: media}, c.kind)
+		if ok != c.ok || ok && (still != c.still || src != want) {
+			t.Errorf("%s %s: %v %+v %v", c.typ, c.kind, still, src, ok)
+		}
+	}
+	if _, _, ok := s.generated(library.Item{Type: library.TypeMovie}, library.ImageThumb); ok {
+		t.Error("a movie without media has a generated image")
+	}
+	s.art = artwork.New(t.TempDir(), "")
+	if _, _, ok := s.generated(library.Item{Type: library.TypeMovie, Media: media}, library.ImageThumb); ok {
+		t.Error("a generated image without ffmpeg")
 	}
 }

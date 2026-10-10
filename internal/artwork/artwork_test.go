@@ -2,14 +2,17 @@ package artwork
 
 import (
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func solid(w, h int, c color.Color) *image.RGBA {
@@ -101,23 +104,72 @@ func TestTranscodeCaches(t *testing.T) {
 	}
 }
 
+// clip writes a test video with ffmpeg, skipping the test if it cannot.
+func clip(t *testing.T, ffmpeg, path string, args ...string) string {
+	t.Helper()
+	args = append([]string{"-v", "error", "-f", "lavfi", "-i"}, args...)
+	if out, err := exec.Command(ffmpeg, append(args, path)...).CombinedOutput(); err != nil {
+		t.Skipf("cannot generate clip: %v %s", err, out)
+	}
+	return path
+}
+
+// meanLuma decodes a JPEG and averages its luma.
+func meanLuma(t *testing.T, path string) float64 {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := jpeg.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	y := img.(*image.YCbCr)
+	sum := 0
+	for _, v := range y.Y {
+		sum += int(v)
+	}
+	return float64(sum) / float64(len(y.Y))
+}
+
 func TestFrame(t *testing.T) {
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
 		t.Skip("ffmpeg not installed")
 	}
 	dir := t.TempDir()
-	video := filepath.Join(dir, "ep.mkv")
-	if out, err := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=1280x720:duration=2:rate=10",
-		"-c:v", "mpeg4", video).CombinedOutput(); err != nil {
-		t.Skipf("cannot generate clip: %v %s", err, out)
-	}
+	hd := clip(t, ffmpeg, filepath.Join(dir, "hd.mkv"), "testsrc=size=1280x720:duration=2:rate=10", "-c:v", "mpeg4")
+	scope := clip(t, ffmpeg, filepath.Join(dir, "scope.mkv"), "testsrc2=size=1280x544:duration=3:rate=24", "-c:v", "mpeg4")
+	// 720x480 with 32:27 pixels displays at 16:9.
+	anamorphic := clip(t, ffmpeg, filepath.Join(dir, "dvd.mkv"), "testsrc2=size=720x480:duration=2:rate=24",
+		"-vf", "setsar=32/27", "-c:v", "mpeg4")
 	s := New(filepath.Join(dir, "cache"), ffmpeg)
-	// A bogus long duration seeks past the end; Frame must fall back to 0.
-	for _, dur := range []int64{2000, 3_600_000} {
-		path, err := s.Frame(context.Background(), 7, dur, video, dur)
+
+	part := 0
+	for _, c := range []struct {
+		name  string
+		kind  Still
+		video string
+		dur   int64
+		w, h  int
+	}{
+		{"episode", EpisodeThumb, hd, 2000, 640, 360},
+		// A bogus long duration seeks past the end; Frame falls back to 0.
+		{"episode, bad duration", EpisodeThumb, hd, 3_600_000, 640, 360},
+		{"poster", MoviePoster, scope, 3000, 600, 900},
+		{"poster, bad duration", MoviePoster, scope, 3_600_000, 600, 900},
+		{"poster, unknown duration", MoviePoster, scope, 0, 600, 900},
+		{"background", MovieArt, scope, 3000, 1280, 544},
+		{"anamorphic background", MovieArt, anamorphic, 2000, 1280, 720},
+		{"anamorphic episode", EpisodeThumb, anamorphic, 2000, 640, 360},
+	} {
+		part++
+		path, err := s.Frame(context.Background(), c.kind, Source{PartID: part, ModTime: 1, File: c.video, Duration: c.dur})
 		if err != nil {
-			t.Fatalf("duration %d: %v", dur, err)
+			t.Errorf("%s: %v", c.name, err)
+			continue
 		}
 		f, err := os.Open(path)
 		if err != nil {
@@ -125,11 +177,73 @@ func TestFrame(t *testing.T) {
 		}
 		cfg, err := jpeg.DecodeConfig(f)
 		f.Close()
-		if err != nil || cfg.Width != 640 || cfg.Height != 360 {
-			t.Errorf("duration %d: frame %+v, %v", dur, cfg, err)
+		if err != nil || cfg.Width != c.w || cfg.Height != c.h {
+			t.Errorf("%s: %dx%d (%v), want %dx%d", c.name, cfg.Width, cfg.Height, err, c.w, c.h)
 		}
+	}
+
+	// Each kind has its own cache entry for the same part, reused later.
+	src := Source{PartID: 100, ModTime: 1, File: scope, Duration: 3000}
+	poster, _ := s.Frame(context.Background(), MoviePoster, src)
+	art, _ := s.Frame(context.Background(), MovieArt, src)
+	thumb, _ := s.Frame(context.Background(), EpisodeThumb, src)
+	if poster == art || art == thumb || poster == thumb {
+		t.Errorf("kinds share cache entries: %s %s %s", poster, art, thumb)
+	}
+	if again, err := s.Frame(context.Background(), MoviePoster, Source{PartID: 100, ModTime: 1, File: "/missing"}); err != nil || again != poster {
+		t.Errorf("cached poster not reused: %q %v", again, err)
+	}
+	if _, err := s.Frame(context.Background(), Still(99), src); err == nil {
+		t.Error("unknown kind succeeded")
 	}
 	if New(dir, "").CanGenerate() {
 		t.Error("CanGenerate without ffmpeg")
+	}
+}
+
+// TestFrameHDR checks that HDR video is tone mapped: the still of a PQ clip
+// differs clearly from the same clip read as SDR.
+func TestFrameHDR(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	dir := t.TempDir()
+	pq := clip(t, ffmpeg, filepath.Join(dir, "pq.mkv"), "testsrc2=size=1280x720:duration=2:rate=24",
+		"-pix_fmt", "yuv420p10le", "-c:v", "libx265", "-x265-params", "log-level=error",
+		"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc")
+	s := New(filepath.Join(dir, "cache"), ffmpeg)
+	naive, err := s.Frame(context.Background(), MovieArt, Source{PartID: 1, ModTime: 1, File: pq, Duration: 2000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapped, err := s.Frame(context.Background(), MovieArt, Source{PartID: 2, ModTime: 1, File: pq, Duration: 2000, HDR: "pq"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, m := meanLuma(t, naive), meanLuma(t, mapped); math.Abs(m-n) < 20 {
+		t.Errorf("tone mapped luma %.0f, naive %.0f; want a clear difference", m, n)
+	}
+}
+
+// TestFrameLimit checks that generation waits for a free slot and gives up
+// when the request does.
+func TestFrameLimit(t *testing.T) {
+	// A missing binary fails at once, so only waiting can hit the deadline.
+	s := New(t.TempDir(), filepath.Join(t.TempDir(), "no-ffmpeg"))
+	if cap(s.gen) < 1 {
+		t.Fatal("no generation slots")
+	}
+	for i := 0; i < cap(s.gen); i++ {
+		s.gen <- struct{}{}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := s.Frame(ctx, MoviePoster, Source{PartID: 1, File: "/nonexistent"}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Frame with every slot taken: %v", err)
+	}
+	<-s.gen
+	if _, err := s.Frame(context.Background(), MoviePoster, Source{PartID: 1, File: "/nonexistent"}); err == nil || errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Frame with a free slot: %v", err)
 	}
 }

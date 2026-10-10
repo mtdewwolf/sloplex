@@ -17,13 +17,25 @@ import (
 
 var imageTypes = map[string]string{".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png"}
 
-// generatedThumb reports whether an item gets a frame-grab thumbnail, and
-// from which part.
-func (s *Server) generatedThumb(it library.Item) (library.Part, int64, bool) {
-	if it.Type != library.TypeEpisode || !s.art.CanGenerate() || len(it.Media) == 0 || len(it.Media[0].Parts) == 0 {
-		return library.Part{}, 0, false
+// generated reports which image, if any, is generated for an item that has
+// no local image of a kind, and from which video part.
+func (s *Server) generated(it library.Item, kind string) (artwork.Still, artwork.Source, bool) {
+	var still artwork.Still
+	switch {
+	case it.Type == library.TypeEpisode && kind == library.ImageThumb:
+		still = artwork.EpisodeThumb
+	case it.Type == library.TypeMovie && kind == library.ImageThumb:
+		still = artwork.MoviePoster
+	case it.Type == library.TypeMovie && kind == library.ImageArt:
+		still = artwork.MovieArt
+	default:
+		return 0, artwork.Source{}, false
 	}
-	return it.Media[0].Parts[0], it.Media[0].Duration, true
+	if !s.art.CanGenerate() || len(it.Media) == 0 || len(it.Media[0].Parts) == 0 {
+		return 0, artwork.Source{}, false
+	}
+	m, p := it.Media[0], it.Media[0].Parts[0]
+	return still, artwork.Source{PartID: p.ID, ModTime: p.ModTime, File: p.File, Duration: m.Duration, HDR: m.HDR}, true
 }
 
 // imageURL is the URL of an item's own image of a kind, or "".
@@ -31,25 +43,25 @@ func (s *Server) imageURL(it library.Item, kind string) string {
 	if img, ok := it.Images[kind]; ok {
 		return fmt.Sprintf("/library/metadata/%d/%s/%d", it.ID, kind, img.ModTime)
 	}
-	if p, _, ok := s.generatedThumb(it); ok && kind == library.ImageThumb {
-		return fmt.Sprintf("/library/metadata/%d/%s/%d", it.ID, kind, p.ModTime)
+	if _, src, ok := s.generated(it, kind); ok {
+		return fmt.Sprintf("/library/metadata/%d/%s/%d", it.ID, kind, src.ModTime)
 	}
 	return ""
 }
 
-// imageFile resolves an item's own image file: a local image, or for an
-// episode thumbnail a generated frame grab.
+// imageFile resolves an item's own image file: a local image, else a
+// generated one.
 func (s *Server) imageFile(ctx context.Context, it library.Item, kind string) (string, bool) {
 	if img, ok := it.Images[kind]; ok {
 		return img.Path, true
 	}
-	if kind == library.ImageThumb {
-		if p, dur, ok := s.generatedThumb(it); ok {
-			path, err := s.art.Frame(ctx, p.ID, p.ModTime, p.File, dur)
-			if err == nil {
-				return path, true
-			}
-			s.log.Warn("frame grab failed", "item", it.ID, "err", err)
+	if still, src, ok := s.generated(it, kind); ok {
+		path, err := s.art.Frame(ctx, still, src)
+		if err == nil {
+			return path, true
+		}
+		if ctx.Err() == nil {
+			s.log.Warn("generating an image failed", "item", it.ID, "kind", kind, "err", err)
 		}
 	}
 	return "", false

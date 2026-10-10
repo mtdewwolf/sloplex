@@ -12,8 +12,8 @@
 - The local artwork file names (`poster.jpg`, `fanart.jpg`, `banner.jpg`,
   `seasonNN-poster.jpg`, `<video name>-thumb.jpg`, and so on) follow publicly
   documented "local media assets" naming conventions.
-- Lookup order, fallbacks, frame grabs, the resize algorithm, and caching are
-  **(sloplex)**.
+- Lookup order, fallbacks, generated images, the resize algorithm, and
+  caching are **(sloplex)**.
 
 ## Kinds
 
@@ -82,18 +82,39 @@ Season number `N` is used two-digit padded (`NN`) and unpadded.
 |---------|------------------------------------------------------|
 | `thumb` | `<stem>-thumb`, `<stem>`                             |
 
-## Generated episode thumbnails (sloplex)
+## Generated images (sloplex)
 
-An episode with no local `thumb` gets a frame grab when `ffmpeg` is
-available:
+When `ffmpeg` is available, items without a local image get one made from
+their first video file:
 
-- The frame is taken at 10% of the duration. If the duration is unknown, it
-  is taken at 5 seconds, or at 0 for very short files.
-- It is scaled to 640 px wide and stored as JPEG under
-  `<dataDir>/cache/thumbs/`.
+| Item    | Kind    | Generated image                                         |
+|---------|---------|---------------------------------------------------------|
+| episode | `thumb` | A frame at 10% of the duration, 640 px wide             |
+| movie   | `thumb` | A 600×900 poster: a frame at 20% of the duration, fitted inside it and centred over a blurred, darkened copy that fills it |
+| movie   | `art`   | A frame at 33% of the duration, 1280 px wide            |
+
+Frames:
+
+- For movies, the frame is the most representative of 24 frames from that
+  point, using ffmpeg's `thumbnail` filter. This avoids landing on a single
+  transition frame.
+- If the duration is unknown, the point is 5 seconds in.
+- If no frame can be read there, as with very short files, the start is
+  used.
+- Non-square pixels (anamorphic video) are corrected first.
+- HDR video (PQ or HLG) is tone mapped to SDR the same way as CPU
+  transcodes; see "HDR tone mapping" in [transcode.md](transcode.md).
+
+Generation and storage:
+
+- Images are JPEG, stored under `<dataDir>/cache/thumbs/` (episodes),
+  `posters/`, and `backgrounds/`. The cache key includes the part ID and the
+  file's modification time.
 - Generation happens on the first request, never during a scan.
-- The cache key includes the part ID and the file's modification time.
-- Movies do not get frame grabs.
+- At most half as many images as there are CPU cores, and at least one, are
+  generated at once. Other requests wait their turn.
+- A local image always wins. Adding `poster.jpg` replaces a generated
+  poster at the next scan.
 
 ## Attributes on items
 
@@ -104,18 +125,18 @@ Each attribute is a URL path, omitted when there is no image:
 ```
 
 - `{timestamp}` is the image file's modification time, or the video's for a
-  generated thumbnail.
+  generated image.
 - `{id}` may be an ancestor's ID when the attribute falls back to an
   ancestor's image.
 
 | Item    | Attribute          | Source                                         |
 |---------|--------------------|------------------------------------------------|
-| movie   | `thumb`, `art`     | own                                            |
+| movie   | `thumb`, `art`     | own local image, else a generated one          |
 | show    | `thumb`, `art`, `banner` | own                                      |
 | season  | `thumb`            | own, else the show's `thumb`                   |
 | season  | `art`              | the show's `art`                               |
 | season  | `parentThumb`      | the show's `thumb`                             |
-| episode | `thumb`            | own local image, else a generated frame        |
+| episode | `thumb`            | own local image, else a generated one          |
 | episode | `art`, `grandparentArt` | the show's `art`                          |
 | episode | `parentThumb`      | the season's `thumb`, with its fallback        |
 | episode | `grandparentThumb` | the show's `thumb`                             |
@@ -130,7 +151,8 @@ only to bust caches.
 The endpoint returns the item's own image of that kind. It never returns an
 ancestor's image; attributes already point to the ancestor's URL.
 
-- Episode `thumb` falls back to a generated frame.
+- Episode `thumb`, and movie `thumb` and `art`, fall back to generated
+  images.
 - An unknown item, or an item without that image, returns 404.
 - `Content-Type` comes from the file extension.
 - `Cache-Control: max-age=86400`.

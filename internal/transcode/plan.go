@@ -339,7 +339,7 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 			// VAAPI and QSV tone map inside the hardware chain.
 			preScaled = false
 		default:
-			tone = toneMapFilter(r.Source.HDR, preW, preH)
+			tone = ToneMapFilter(r.Source.HDR, preW, preH)
 		}
 		switch {
 		case r.Burn != nil && r.Burn.File != "":
@@ -532,10 +532,10 @@ func toneMapSize(r Request, p Plan) (w, h int, ok bool) {
 	return p.Width, p.Height, true
 }
 
-// toneMapFilter converts an HDR source (probe.HDRPQ or HDRHLG) to 8-bit
+// ToneMapFilter converts an HDR source (probe.HDRPQ or HDRHLG) to 8-bit
 // BT.709 SDR, first scaling to w×h when both are set; see "HDR tone
 // mapping" in docs/spec/transcode.md.
-func toneMapFilter(hdr string, w, h int) string {
+func ToneMapFilter(hdr string, w, h int) string {
 	tin := "smpte2084"
 	if hdr == probe.HDRHLG {
 		tin = "arib-std-b67"

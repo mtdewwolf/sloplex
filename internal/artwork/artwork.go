@@ -1,6 +1,6 @@
-// Package artwork generates and resizes images: ffmpeg frame grabs for
-// episode thumbnails and the cached resizer behind /photo/:/transcode. See
-// docs/spec/artwork.md.
+// Package artwork generates and resizes images: ffmpeg stills for items
+// without local artwork, and the cached resizer behind /photo/:/transcode.
+// See docs/spec/artwork.md.
 package artwork
 
 import (
@@ -17,11 +17,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/mtdewwolf/sloplex/internal/atomicfile"
+	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
 // MaxPixels is the largest source image the resizer accepts.
@@ -34,18 +36,20 @@ var ErrTooLarge = errors.New("image too large")
 type Service struct {
 	cacheDir string
 	ffmpeg   string
+	gen      chan struct{} // limits concurrent generation
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 }
 
 // New returns a Service caching under cacheDir. ffmpeg is the path of the
-// ffmpeg binary, or "" to disable frame grabs.
+// ffmpeg binary, or "" to disable generated images.
 func New(cacheDir, ffmpeg string) *Service {
-	return &Service{cacheDir: cacheDir, ffmpeg: ffmpeg, locks: map[string]*sync.Mutex{}}
+	return &Service{cacheDir: cacheDir, ffmpeg: ffmpeg, locks: map[string]*sync.Mutex{},
+		gen: make(chan struct{}, max(1, runtime.NumCPU()/2))}
 }
 
-// CanGenerate reports whether frame grabs are available.
+// CanGenerate reports whether generated images are available.
 func (s *Service) CanGenerate() bool { return s != nil && s.ffmpeg != "" }
 
 // lock serialises work on one cache key so concurrent requests for the same
@@ -67,13 +71,64 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// Frame returns a cached JPEG frame grab of a video part, generating it on
-// first use.
-func (s *Service) Frame(ctx context.Context, partID int, modTime int64, video string, durationMs int64) (string, error) {
-	if !s.CanGenerate() {
-		return "", errors.New("frame grabs disabled")
+// Still is a kind of generated image; see "Generated images" in
+// docs/spec/artwork.md.
+type Still int
+
+const (
+	EpisodeThumb Still = iota
+	MoviePoster
+	MovieArt
+)
+
+type still struct {
+	dir   string
+	at    float64 // where in the video, as a fraction of its duration
+	width int
+	after string // filters after scaling and tone mapping
+}
+
+var stills = map[Still]still{
+	EpisodeThumb: {"thumbs", 0.1, 640, ""},
+	MoviePoster: {"posters", 0.2, 960, "thumbnail=24,split[a][b];" +
+		"[a]scale=600:900:force_original_aspect_ratio=increase,crop=600:900,boxblur=20:2,eq=brightness=-0.12[bg];" +
+		"[b]scale=600:900:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2"},
+	MovieArt: {"backgrounds", 1.0 / 3, 1280, "thumbnail=24"},
+}
+
+// Source is the video part a still is made from.
+type Source struct {
+	PartID   int
+	ModTime  int64
+	File     string
+	Duration int64  // milliseconds; 0 if unknown
+	HDR      string // probe.HDRPQ or probe.HDRHLG to tone map to SDR
+}
+
+// filter is the ffmpeg filter graph for a still: square pixels at the
+// still's width, then SDR, then the still's own filters.
+func (st still) filter(hdr string) string {
+	f := fmt.Sprintf("scale=%d:trunc(%d*ih/(iw*sar)/2)*2,setsar=1", st.width, st.width)
+	if hdr != "" {
+		f += "," + transcode.ToneMapFilter(hdr, 0, 0)
 	}
-	out := filepath.Join(s.cacheDir, "thumbs", fmt.Sprintf("%d-%d.jpg", partID, modTime))
+	if st.after != "" {
+		f += "," + st.after
+	}
+	return f
+}
+
+// Frame returns a cached JPEG still of a video part, generating it on first
+// use.
+func (s *Service) Frame(ctx context.Context, kind Still, src Source) (string, error) {
+	if !s.CanGenerate() {
+		return "", errors.New("generated images disabled")
+	}
+	st, ok := stills[kind]
+	if !ok {
+		return "", fmt.Errorf("unknown still %d", kind)
+	}
+	out := filepath.Join(s.cacheDir, st.dir, fmt.Sprintf("%d-%d.jpg", src.PartID, src.ModTime))
 	defer s.lock(out)()
 	if exists(out) {
 		return out, nil
@@ -81,10 +136,16 @@ func (s *Service) Frame(ctx context.Context, partID int, modTime int64, video st
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return "", err
 	}
+	select {
+	case s.gen <- struct{}{}:
+		defer func() { <-s.gen }()
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 
 	at := 5 * time.Second
-	if durationMs > 0 {
-		at = time.Duration(durationMs) * time.Millisecond / 10
+	if src.Duration > 0 {
+		at = time.Duration(float64(src.Duration)*st.at) * time.Millisecond
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -92,8 +153,8 @@ func (s *Service) Frame(ctx context.Context, partID int, modTime int64, video st
 	defer os.Remove(tmp)
 	grab := func(at time.Duration) error {
 		cmd := exec.CommandContext(ctx, s.ffmpeg, "-v", "error", "-y",
-			"-ss", strconv.FormatFloat(at.Seconds(), 'f', 3, 64), "-i", video,
-			"-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "3", tmp)
+			"-ss", strconv.FormatFloat(at.Seconds(), 'f', 3, 64), "-i", src.File,
+			"-frames:v", "1", "-vf", st.filter(src.HDR), "-q:v", "3", tmp)
 		if b, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("ffmpeg: %w: %s", err, b)
 		}

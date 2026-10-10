@@ -18,6 +18,14 @@ await login(page);
 s.check(await page.isVisible("#nav-admin"), "admin nav visible for owner");
 await page.waitForFunction(() => [...document.querySelectorAll(".tile img")].some((i) => i.complete && i.naturalWidth > 0));
 s.check((await page.locator(".tile").count()) >= 4, "recently added shows poster tiles");
+// Legacy has no poster file, so one is made from the video.
+const generated = page.locator("a.tile", { hasText: "Legacy" }).first().locator("img");
+await generated.waitFor({ timeout: 15000 });
+await page.waitForFunction((img) => img.complete && img.naturalWidth > 0, await generated.elementHandle(), { timeout: 15000 });
+const [gw, gh] = await generated.evaluate((img) => [img.naturalWidth, img.naturalHeight]);
+s.check(gh > gw, `a movie without a poster file gets a generated poster (${gw}x${gh})`);
+await page.waitForFunction(() => [...document.querySelectorAll(".tile img")].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15000 });
+s.check(true, "every tile image loads, generated or not");
 await s.shot(page, "library");
 
 // Play a WebM movie, pause, and see it On Deck with progress.
