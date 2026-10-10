@@ -45,8 +45,14 @@ type Config struct {
 	Watch bool `json:"watch"`
 	// ScanInterval is a Go duration ("1h", "30m") between full scans of
 	// every library; "0" turns them off.
-	ScanInterval string    `json:"scanInterval"`
-	Libraries    []Library `json:"libraries"`
+	ScanInterval string `json:"scanInterval"`
+	// X264Preset is the libx264 preset for software transcoding, or "auto"
+	// to pick one per transcode from a startup benchmark and current load.
+	X264Preset string `json:"x264Preset"`
+	// TranscodeThrottle pauses HLS transcodes that are far ahead of the
+	// player.
+	TranscodeThrottle bool      `json:"transcodeThrottle"`
+	Libraries         []Library `json:"libraries"`
 }
 
 // SupportedTypes lists the library types the server can scan.
@@ -59,15 +65,17 @@ func Default() Config {
 		name = "sloplex"
 	}
 	return Config{
-		FriendlyName:  name,
-		Listen:        ":32400",
-		DataDir:       "data",
-		Discovery:     true,
-		MaxTranscodes: 2,
-		Hwaccel:       "auto",
-		HwaccelDevice: "/dev/dri/renderD128",
-		Watch:         true,
-		ScanInterval:  "1h",
+		FriendlyName:      name,
+		Listen:            ":32400",
+		DataDir:           "data",
+		Discovery:         true,
+		MaxTranscodes:     2,
+		Hwaccel:           "auto",
+		HwaccelDevice:     "/dev/dri/renderD128",
+		X264Preset:        "auto",
+		TranscodeThrottle: true,
+		Watch:             true,
+		ScanInterval:      "1h",
 	}
 }
 
@@ -114,6 +122,11 @@ func (c Config) Validate() error {
 	}
 	if _, err := c.ScanEvery(); err != nil {
 		return err
+	}
+	switch c.X264Preset {
+	case "auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium":
+	default:
+		return fmt.Errorf("x264Preset %q: want auto, ultrafast, superfast, veryfast, faster, fast or medium", c.X264Preset)
 	}
 	seen := map[string]bool{}
 	for i, lib := range c.Libraries {

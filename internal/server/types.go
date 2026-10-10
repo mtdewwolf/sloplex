@@ -57,6 +57,7 @@ type TranscodeSession struct {
 	Width         int    `xml:"width,attr,omitempty" json:"width,omitempty"`
 	Height        int    `xml:"height,attr,omitempty" json:"height,omitempty"`
 	Complete      Bool   `xml:"complete,attr" json:"complete"`
+	Throttled     Bool   `xml:"throttled,attr" json:"throttled"`
 
 	TranscodeHwEncoding     string `xml:"transcodeHwEncoding,attr,omitempty" json:"transcodeHwEncoding,omitempty"`
 	TranscodeHwFullPipeline Bool   `xml:"transcodeHwFullPipeline,attr" json:"transcodeHwFullPipeline"`

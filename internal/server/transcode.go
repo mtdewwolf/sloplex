@@ -414,6 +414,7 @@ func (s *Server) handleTranscodeSessions(w http.ResponseWriter, r *http.Request)
 			Key: info.ID, RatingKey: strconv.Itoa(info.ItemID), Protocol: info.Protocol,
 			VideoDecision: v, AudioDecision: a, Width: info.Plan.Width, Height: info.Plan.Height,
 			Complete:                Bool(info.Complete),
+			Throttled:               Bool(info.Throttled),
 			TranscodeHwEncoding:     info.Pipeline.Accel,
 			TranscodeHwFullPipeline: Bool(info.Pipeline.Accel != "" && info.Pipeline.Full),
 		})
@@ -427,12 +428,19 @@ func (s *Server) handleTranscoderInfo(w http.ResponseWriter, r *http.Request) {
 	if accel == "" {
 		accel = "none"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"available":     s.tc.Available(),
 		"hwaccel":       accel,
 		"encoder":       transcode.Encoder(hw.Accel),
 		"device":        hw.Device,
 		"requested":     s.tc.Requested(),
 		"maxTranscodes": s.tc.MaxTranscodes(),
-	})
+		"x264Preset":    s.tc.Preset(),
+		"throttle":      s.tc.Throttle(),
+		"softwareLoad":  math.Round(s.tc.SoftwareLoad()*100) / 100,
+	}
+	if c := s.tc.Capacity(); c != nil {
+		out["benchmark"] = c
+	}
+	writeJSON(w, http.StatusOK, out)
 }

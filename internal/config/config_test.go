@@ -17,7 +17,8 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.FriendlyName != "den" || cfg.Listen != ":32400" || !cfg.Discovery || len(cfg.Libraries) != 1 {
+	if cfg.FriendlyName != "den" || cfg.Listen != ":32400" || !cfg.Discovery || len(cfg.Libraries) != 1 ||
+		cfg.X264Preset != "auto" || !cfg.TranscodeThrottle {
 		t.Errorf("cfg = %+v", cfg)
 	}
 	if p, _ := cfg.Port(); p != 32400 {
@@ -47,6 +48,7 @@ func TestValidate(t *testing.T) {
 		"bad hwaccel": {func(c *Config) { c.Hwaccel = "cuda" }, "hwaccel"},
 		"bad scan":    {func(c *Config) { c.ScanInterval = "hourly" }, "scanInterval"},
 		"short scan":  {func(c *Config) { c.ScanInterval = "10s" }, "scanInterval"},
+		"bad preset":  {func(c *Config) { c.X264Preset = "placebo" }, "x264Preset"},
 	} {
 		cfg := Default()
 		tc.mut(&cfg)
