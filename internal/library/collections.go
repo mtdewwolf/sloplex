@@ -15,8 +15,9 @@ const (
 	CollectionManual = "manual"
 )
 
-// MaxCollectionItems caps the members of a manual collection.
-const MaxCollectionItems = 1000
+// MaxCollectionItems caps the members of a manual collection. It is a
+// variable so tests can lower it.
+var MaxCollectionItems = 1000
 
 // Collection groups movies or shows of one section.
 type Collection struct {

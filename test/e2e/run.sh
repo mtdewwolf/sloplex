@@ -49,7 +49,10 @@ fi
 cat > "$media/movies/Sintel (2010)/Sintel (2010).nfo" <<'NFO'
 <movie><title>Sintel</title><tagline>A girl and her dragon</tagline><mpaa>PG</mpaa><rating>7.5</rating>
 <plot>&lt;b&gt;Open&lt;/b&gt; movie by the Blender Institute.</plot><genre>Animation</genre><genre>Fantasy</genre>
-<director>Colin Levy</director><actor><name>Halina Reijn</name><role>Sintel</role></actor></movie>
+<director>Colin Levy</director><actor><name>Halina Reijn</name><role>Sintel</role></actor><set>Blender Open Movies</set></movie>
+NFO
+cat > "$media/movies/Big Buck (2008)/Big Buck (2008).nfo" <<'NFO'
+<movie><title>Big Buck</title><set>Blender Open Movies</set></movie>
 NFO
 leaves=7 # movies and episodes above
 

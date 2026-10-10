@@ -43,6 +43,10 @@ token as a query parameter.
 - Sections are listed, then their items, as a poster grid.
   - Posters come from `/photo/:/transcode`.
   - Shows open into seasons, and seasons into episodes.
+  - A section page lists its collections (see
+    [collections.md](collections.md)) above its items, when it has any. A
+    collection opens into its members. Collections are managed through the
+    API only.
   - Item pages show `.nfo` metadata when present (see
     [metadata.md](metadata.md)): original title, tagline, summary, content
     rating, rating, genres, directors, writers, studio, collections, and up

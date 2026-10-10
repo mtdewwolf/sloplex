@@ -199,6 +199,8 @@ function tile(item) {
     sub = `${item.grandparentTitle || ""} · ${episodeLabel(item)}`;
   } else if (item.type === "season") {
     sub = `${item.leafCount || 0} episodes`;
+  } else if (item.type === "collection") {
+    sub = `${item.childCount || 0} ${item.subtype === "show" ? "shows" : "movies"}`;
   }
   return el("a", { class: "tile" + (wide ? " wide" : ""), href: `#/item/${item.ratingKey}` },
     art,
@@ -226,8 +228,14 @@ async function viewLibrary() {
 }
 
 async function viewSection(id) {
-  const mc = container(await api("GET", `/library/sections/${encodeURIComponent(id)}/all`));
-  render(el("h1", { text: mc.librarySectionTitle || mc.title1 || "Library" }), grid(mc.Metadata));
+  const key = `/library/sections/${encodeURIComponent(id)}`;
+  const [mc, cols] = await Promise.all([api("GET", `${key}/all`), api("GET", `${key}/collections`)]);
+  const all = container(mc);
+  const collections = container(cols).Metadata || [];
+  render(
+    el("h1", { text: all.librarySectionTitle || all.title1 || "Library" }),
+    collections.length ? [el("h2", { text: "Collections" }), grid(collections), el("h2", { text: "All" })] : null,
+    grid(all.Metadata));
 }
 
 async function viewItem(id) {
@@ -235,15 +243,16 @@ async function viewItem(id) {
   const item = (mc.Metadata || [])[0];
   if (!item) throw new APIError(404, "Not found");
 
-  if (item.type === "show" || item.type === "season") {
+  if (item.type === "show" || item.type === "season" || item.type === "collection") {
     const kids = container(await api("GET", item.key)).Metadata || [];
     const heading = item.type === "season" ? `${item.parentTitle} · ${item.title}` : item.title;
+    const kidsTitle = { show: "Seasons", season: "Episodes", collection: item.subtype === "show" ? "Shows" : "Movies" }[item.type];
     render(
       el("h1", { text: heading }),
+      item.type === "collection" ? el("p", { class: "muted", text: `Collection · ${item.librarySectionTitle || ""}` }) : null,
       item.summary ? el("p", { class: "summary", text: item.summary }) : null,
-      el("div", { class: "row" },
-        watchButtons(item, () => viewItem(id))),
-      el("h2", { text: item.type === "show" ? "Seasons" : "Episodes" }),
+      item.type === "collection" ? null : el("div", { class: "row" }, watchButtons(item, () => viewItem(id))),
+      el("h2", { text: kidsTitle }),
       grid(kids));
     return;
   }

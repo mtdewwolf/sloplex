@@ -52,6 +52,17 @@ s.check(meta.summary === "<b>Open</b> movie by the Blender Institute." && !meta.
   `nfo metadata shown as text: ${JSON.stringify(meta)}`);
 await s.shot(page, "nfo");
 
+// The .nfo set becomes a collection on the section page, in release order.
+await page.click("#nav-library, nav a:text('Library')");
+await page.click("a:has(button:text('Movies'))");
+await page.waitForSelector("h2:text('Collections')");
+await page.click("a.tile:has-text('Blender Open Movies')");
+await page.waitForSelector("h1:text('Blender Open Movies')");
+const members = await page.locator(".tile .title").allTextContents();
+s.check(JSON.stringify(members) === JSON.stringify(["Big Buck", "Sintel"]) && await page.isVisible("h2:text('Movies')"),
+  `collection page lists its movies in release order: ${JSON.stringify(members)}`);
+await s.shot(page, "collection");
+
 // Admin: a kid account limited to the Kids library.
 await page.click("#nav-admin");
 await page.waitForSelector("h1:text('Admin')");
