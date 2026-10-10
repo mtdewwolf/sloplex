@@ -1,0 +1,107 @@
+// Package testutil holds helpers shared by tests: a PGS subtitle generator
+// and a frame brightness probe.
+package testutil
+
+import (
+	"bytes"
+	"encoding/binary"
+	"image/jpeg"
+	"os"
+	"os/exec"
+	"testing"
+)
+
+// PGS (Blu-ray "presentation graphics") segment types, from the publicly
+// documented .sup format.
+const (
+	pgsPDS = 0x14 // palette definition
+	pgsODS = 0x15 // object (bitmap) definition
+	pgsPCS = 0x16 // presentation composition
+	pgsWDS = 0x17 // window definition
+	pgsEND = 0x80
+)
+
+type supWriter struct{ bytes.Buffer }
+
+func (w *supWriter) segment(pts uint32, typ byte, payload []byte) {
+	w.WriteString("PG")
+	binary.Write(w, binary.BigEndian, pts)
+	binary.Write(w, binary.BigEndian, uint32(0)) // DTS
+	w.WriteByte(typ)
+	binary.Write(w, binary.BigEndian, uint16(len(payload)))
+	w.Write(payload)
+}
+
+func be16(v int) []byte { return []byte{byte(v >> 8), byte(v)} }
+
+// WriteSUP writes a PGS subtitle that shows a solid white w×h box at (x, y)
+// on a frameW×frameH canvas from startMs to endMs.
+func WriteSUP(t testing.TB, path string, frameW, frameH, x, y, w, h, startMs, endMs int) {
+	t.Helper()
+	var s supWriter
+	window := append([]byte{1, 0}, append(append(be16(x), be16(y)...), append(be16(w), be16(h)...)...)...)
+	pcs := func(state byte, objects int) []byte {
+		b := append(be16(frameW), be16(frameH)...)
+		b = append(b, 0x10)                   // frame rate
+		b = append(b, be16(int(state)>>7)...) // composition number
+		b = append(b, state, 0, 0, byte(objects))
+		if objects > 0 {
+			b = append(b, 0, 0, 0, 0) // object 0, window 0, not cropped
+			b = append(b, append(be16(x), be16(y)...)...)
+		}
+		return b
+	}
+
+	// Run-length encoded bitmap: every line is one run of palette entry 1.
+	var rle []byte
+	for range h {
+		if w < 64 {
+			rle = append(rle, 0, 0x80|byte(w), 1)
+		} else {
+			rle = append(rle, 0, 0xC0|byte(w>>8), byte(w), 1)
+		}
+		rle = append(rle, 0, 0) // end of line
+	}
+	n := len(rle) + 4
+	ods := []byte{0, 0, 0, 0xC0, byte(n >> 16), byte(n >> 8), byte(n)}
+	ods = append(ods, append(be16(w), be16(h)...)...)
+	ods = append(ods, rle...)
+
+	show := uint32(startMs * 90)
+	s.segment(show, pgsPCS, pcs(0x80, 1)) // epoch start with one object
+	s.segment(show, pgsWDS, window)
+	s.segment(show, pgsPDS, []byte{0, 0, 0, 16, 128, 128, 0, 1, 235, 128, 128, 255}) // 0 transparent, 1 white
+	s.segment(show, pgsODS, ods)
+	s.segment(show, pgsEND, nil)
+	hide := uint32(endMs * 90)
+	s.segment(hide, pgsPCS, pcs(0x00, 0)) // no objects: clear
+	s.segment(hide, pgsWDS, window)
+	s.segment(hide, pgsEND, nil)
+	if err := os.WriteFile(path, s.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// BrightPixels counts near-white pixels in the frame at time t of an MP4.
+func BrightPixels(t testing.TB, ffmpeg, mp4 string, at string) int {
+	t.Helper()
+	out, err := exec.Command(ffmpeg, "-v", "error", "-ss", at, "-i", mp4, "-frames:v", "1", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1").Output()
+	if err != nil {
+		t.Fatalf("frame at %s: %v", at, err)
+	}
+	img, err := jpeg.Decode(bytes.NewReader(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			if r > 0xc000 && g > 0xc000 && bl > 0xc000 {
+				n++
+			}
+		}
+	}
+	return n
+}

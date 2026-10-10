@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"image/jpeg"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mtdewwolf/sloplex/internal/probe"
+	"github.com/mtdewwolf/sloplex/internal/testutil"
 )
 
 func TestArgsStreams(t *testing.T) {
@@ -48,30 +48,6 @@ func TestArgsStreams(t *testing.T) {
 	if !strings.Contains(got, "subtitles=filename=burn.ass,setpts=PTS-STARTPTS,format=nv12,hwupload") {
 		t.Errorf("vaapi burn args: %s", got)
 	}
-}
-
-// brightPixels counts near-white pixels in the frame at time t of an MP4.
-func brightPixels(t *testing.T, ffmpeg, mp4 string, at string) int {
-	t.Helper()
-	out, err := exec.Command(ffmpeg, "-v", "error", "-ss", at, "-i", mp4, "-frames:v", "1", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1").Output()
-	if err != nil {
-		t.Fatalf("frame at %s: %v", at, err)
-	}
-	img, err := jpeg.Decode(bytes.NewReader(out))
-	if err != nil {
-		t.Fatal(err)
-	}
-	n := 0
-	b := img.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			r, g, bl, _ := img.At(x, y).RGBA()
-			if r > 0xc000 && g > 0xc000 && bl > 0xc000 {
-				n++
-			}
-		}
-	}
-	return n
 }
 
 func TestBurnTextSubtitles(t *testing.T) {
@@ -115,19 +91,19 @@ func TestBurnTextSubtitles(t *testing.T) {
 	}
 
 	out := transcode(0)
-	if n := brightPixels(t, ffmpeg, out, "1.0"); n != 0 {
+	if n := testutil.BrightPixels(t, ffmpeg, out, "1.0"); n != 0 {
 		t.Errorf("subtitle visible before its start: %d bright pixels", n)
 	}
-	if n := brightPixels(t, ffmpeg, out, "3.0"); n < 100 {
+	if n := testutil.BrightPixels(t, ffmpeg, out, "3.0"); n < 100 {
 		t.Fatalf("subtitle not rendered at 3s (%d bright pixels); is a font installed?", n)
 	}
 	// Started at 1.5s: output time 0.3 is source 1.8 (no subtitle), output
 	// 1.5 is source 3.0 (subtitle).
 	out = transcode(1.5)
-	if n := brightPixels(t, ffmpeg, out, "0.3"); n != 0 {
+	if n := testutil.BrightPixels(t, ffmpeg, out, "0.3"); n != 0 {
 		t.Errorf("offset stream shows subtitle too early: %d bright pixels", n)
 	}
-	if n := brightPixels(t, ffmpeg, out, "1.5"); n < 100 {
+	if n := testutil.BrightPixels(t, ffmpeg, out, "1.5"); n < 100 {
 		t.Errorf("offset stream lost the subtitle at source 3.0s: %d bright pixels", n)
 	}
 	if entries, _ := os.ReadDir(filepath.Join(dir, "tc")); len(entries) != 0 {

@@ -14,6 +14,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/lang"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/probe"
+	"github.com/mtdewwolf/sloplex/internal/testutil"
 )
 
 // newStreamsFixture: section 1 Movies with "Multi (2020).mkv" holding
@@ -241,5 +242,61 @@ func TestTranscodeWithStreams(t *testing.T) {
 		if code, _, _ := f.raw(t, base+q, testToken); code != want {
 			t.Errorf("start.mp4%s = %d, want %d", q, code, want)
 		}
+	}
+}
+
+// TestPGSAutoBurn checks the Blu-ray case end to end: a forced PGS track is
+// selected by default and burned in by a plain transcode request.
+func TestPGSAutoBurn(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	prober, err := probe.NewFFprobe("")
+	if err != nil {
+		t.Skip("ffprobe not installed")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "movies", "Blu (2020)")
+	os.MkdirAll(dir, 0o755)
+	sup := filepath.Join(root, "subs.sup")
+	testutil.WriteSUP(t, sup, 640, 360, 220, 260, 200, 60, 2000, 4000)
+	if out, err := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=black:s=640x360:r=10:d=6", "-i", sup,
+		"-map", "0", "-map", "1", "-c:v", "libx264", "-c:s", "copy", "-copyts",
+		"-metadata:s:s:0", "language=eng", "-disposition:s:0", "forced", filepath.Join(dir, "Blu (2020).mkv")).CombinedOutput(); err != nil {
+		t.Fatalf("mux: %v %s", err, out)
+	}
+	store, _ := library.Open("")
+	store.SyncSections([]library.SectionDef{{Title: "Movies", Type: library.TypeMovie, Paths: []string{filepath.Join(root, "movies")}}}, time.Now())
+	sc := library.NewScanner(store, prober, nil)
+	if _, err := sc.Scan(context.Background(), store.Sections()[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}}
+	f := &fixture{srv: startServer(t, opts, store, sc, ffmpeg), store: store, root: root}
+	movie := f.getJSON(t, "/library/sections/1/all").Metadata[0]
+
+	pgs := byTitle(streamsOf(t, f, movie.Key, testToken))["English Forced (PGS)"]
+	if pgs.ID == 0 || pgs.Key != "" || !pgs.Selected || pgs.Codec != "hdmv_pgs_subtitle" {
+		t.Fatalf("PGS stream = %+v", pgs)
+	}
+	if code, _, _ := f.raw(t, fmt.Sprintf("/library/streams/%d", pgs.ID), testToken); code != 400 {
+		t.Errorf("PGS as text = %d, want 400", code)
+	}
+
+	burned := func(q string) (before, during int) {
+		code, _, body := f.raw(t, "/video/:/transcode/universal/start.mp4?path="+movie.Key+q, testToken)
+		if code != 200 {
+			t.Fatalf("transcode%s = %d", q, code)
+		}
+		out := filepath.Join(t.TempDir(), "out.mp4")
+		os.WriteFile(out, body, 0o644)
+		return testutil.BrightPixels(t, ffmpeg, out, "1.0"), testutil.BrightPixels(t, ffmpeg, out, "3.0")
+	}
+	if before, during := burned(""); before != 0 || during < 6000 {
+		t.Errorf("default request: %d bright pixels before, %d during; want 0 and the box burned in", before, during)
+	}
+	if _, during := burned("&subtitles=none"); during != 0 {
+		t.Errorf("subtitles=none still burned the PGS box (%d bright pixels)", during)
 	}
 }
