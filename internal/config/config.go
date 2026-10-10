@@ -38,9 +38,15 @@ type Config struct {
 	MaxTranscodes int `json:"maxTranscodes"`
 	// Hwaccel selects hardware transcoding: none, auto, vaapi, qsv, nvenc
 	// or videotoolbox. HwaccelDevice is the DRM node for vaapi and qsv.
-	Hwaccel       string    `json:"hwaccel"`
-	HwaccelDevice string    `json:"hwaccelDevice"`
-	Libraries     []Library `json:"libraries"`
+	Hwaccel       string `json:"hwaccel"`
+	HwaccelDevice string `json:"hwaccelDevice"`
+	// X264Preset is the libx264 preset for software transcoding, or "auto"
+	// to pick one per transcode from a startup benchmark and current load.
+	X264Preset string `json:"x264Preset"`
+	// TranscodeThrottle pauses HLS transcodes that are far ahead of the
+	// player.
+	TranscodeThrottle bool      `json:"transcodeThrottle"`
+	Libraries         []Library `json:"libraries"`
 }
 
 // SupportedTypes lists the library types the server can scan.
@@ -53,13 +59,15 @@ func Default() Config {
 		name = "sloplex"
 	}
 	return Config{
-		FriendlyName:  name,
-		Listen:        ":32400",
-		DataDir:       "data",
-		Discovery:     true,
-		MaxTranscodes: 2,
-		Hwaccel:       "auto",
-		HwaccelDevice: "/dev/dri/renderD128",
+		FriendlyName:      name,
+		Listen:            ":32400",
+		DataDir:           "data",
+		Discovery:         true,
+		MaxTranscodes:     2,
+		Hwaccel:           "auto",
+		HwaccelDevice:     "/dev/dri/renderD128",
+		X264Preset:        "auto",
+		TranscodeThrottle: true,
 	}
 }
 
@@ -103,6 +111,11 @@ func (c Config) Validate() error {
 	case "none", "auto", "vaapi", "qsv", "nvenc", "videotoolbox":
 	default:
 		return fmt.Errorf("hwaccel %q: want none, auto, vaapi, qsv, nvenc or videotoolbox", c.Hwaccel)
+	}
+	switch c.X264Preset {
+	case "auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium":
+	default:
+		return fmt.Errorf("x264Preset %q: want auto, ultrafast, superfast, veryfast, faster, fast or medium", c.X264Preset)
 	}
 	seen := map[string]bool{}
 	for i, lib := range c.Libraries {

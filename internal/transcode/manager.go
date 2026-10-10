@@ -3,6 +3,7 @@ package transcode
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -10,10 +11,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,6 +40,14 @@ type Manager struct {
 	log       *slog.Logger
 	idle      time.Duration
 	pollGap   time.Duration
+	// preset is the configured x264Preset; "" or PresetAuto picks per
+	// transcode from capacity.
+	preset   string
+	capacity Capacity // guarded by mu
+	// Throttling; the limits are fixed before any session starts.
+	throttle                bool
+	pauseAhead, resumeAhead time.Duration
+	throttleTick            time.Duration
 
 	mu       sync.Mutex
 	sessions map[string]*Session
@@ -61,6 +72,12 @@ type Session struct {
 	err       error // set before done is closed
 	lastTouch atomic.Int64
 	pipeline  atomic.Pointer[Pipeline]
+	// load is the estimated machine share of the software pipeline.
+	load float64
+	// requested is the newest segment a player asked for.
+	requested atomic.Int64
+	nudge     chan struct{}
+	throttled atomic.Bool
 }
 
 type streamInfo struct {
@@ -68,6 +85,7 @@ type streamInfo struct {
 	itemID   int
 	plan     Plan
 	started  time.Time
+	load     float64
 	pipeline Pipeline // guarded by Manager.mu
 }
 
@@ -79,6 +97,8 @@ type Info struct {
 	Plan     Plan
 	Pipeline Pipeline
 	Complete bool
+	// Throttled is set while an HLS session's ffmpeg is paused.
+	Throttled bool
 }
 
 // Options configures a Manager.
@@ -92,7 +112,12 @@ type Options struct {
 	// Requested the configured hwaccel value, for reporting.
 	HW        HW
 	Requested string
-	Log       *slog.Logger
+	// Preset is the x264Preset setting: PresetAuto (or empty) or a libx264
+	// preset. Auto needs SetCapacity; until then it uses DefaultPreset.
+	Preset string
+	// Throttle pauses HLS transcodes that are far ahead of the player.
+	Throttle bool
+	Log      *slog.Logger
 }
 
 // New returns a Manager.
@@ -109,6 +134,8 @@ func New(o Options) (*Manager, error) {
 	m := &Manager{
 		ffmpeg: o.FFmpeg, dir: o.Dir, max: o.MaxTranscodes, hw: o.HW, requested: o.Requested, log: o.Log,
 		idle: 2 * time.Minute, pollGap: 100 * time.Millisecond,
+		preset: o.Preset, throttle: o.Throttle,
+		pauseAhead: DefaultPauseAhead, resumeAhead: DefaultResumeAhead, throttleTick: time.Second,
 		sessions: map[string]*Session{}, streams: map[*streamInfo]struct{}{},
 		stop: make(chan struct{}),
 	}
@@ -119,6 +146,70 @@ func New(o Options) (*Manager, error) {
 
 // SetIdleTimeout changes how long an untouched session survives. For tests.
 func (m *Manager) SetIdleTimeout(d time.Duration) { m.mu.Lock(); m.idle = d; m.mu.Unlock() }
+
+// setThrottleLimits changes the throttle limits. For tests; call it before
+// starting sessions.
+func (m *Manager) setThrottleLimits(pause, resume, tick time.Duration) {
+	m.pauseAhead, m.resumeAhead, m.throttleTick = pause, resume, tick
+}
+
+// SetCapacity sets the measured software encoding capacity used by auto
+// presets.
+func (m *Manager) SetCapacity(c Capacity) { m.mu.Lock(); m.capacity = c; m.mu.Unlock() }
+
+// Capacity returns the measured software encoding capacity, or nil.
+func (m *Manager) Capacity() Capacity {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return maps.Clone(m.capacity)
+}
+
+// Preset returns the configured x264Preset.
+func (m *Manager) Preset() string { return cmp.Or(m.preset, PresetAuto) }
+
+// Throttle reports whether HLS throttling is on and supported.
+func (m *Manager) Throttle() bool { return m.throttle && canThrottle }
+
+// SoftwareLoad is the estimated share of the machine the running software
+// encodes need to keep up with real time.
+func (m *Manager) SoftwareLoad() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.softwareLoadLocked()
+}
+
+// softwareLoadLocked must hold m.mu.
+func (m *Manager) softwareLoadLocked() float64 {
+	total := 0.0
+	for _, s := range m.sessions {
+		select {
+		case <-s.done:
+			continue
+		default:
+		}
+		if s.pipeline.Load().Accel == "" {
+			total += s.load
+		}
+	}
+	for st := range m.streams {
+		if st.pipeline.Accel == "" {
+			total += st.load
+		}
+	}
+	return total
+}
+
+// choosePresetLocked sets the software preset of a plan and returns its
+// estimated load. It must hold m.mu.
+func (m *Manager) choosePresetLocked(r Request, p *Plan) float64 {
+	if m.preset != "" && m.preset != PresetAuto {
+		p.Preset = m.preset
+		return m.capacity.Load(r.Source, *p, m.preset)
+	}
+	var load float64
+	p.Preset, load = m.capacity.ChoosePreset(m.softwareLoadLocked(), r.Source, *p)
+	return load
+}
 
 // Available reports whether ffmpeg is configured.
 func (m *Manager) Available() bool { return m != nil && m.ffmpeg != "" }
@@ -182,7 +273,9 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 		return nil, ErrBusy
 	}
 	p := Decide(r)
-	s := &Session{ID: newID(), Account: account, Label: label, ItemID: itemID, Plan: p, Request: r, done: make(chan struct{})}
+	load := m.choosePresetLocked(r, &p)
+	s := &Session{ID: newID(), Account: account, Label: label, ItemID: itemID, Plan: p, Request: r,
+		done: make(chan struct{}), load: load, nudge: make(chan struct{}, 1)}
 	s.dir = filepath.Join(m.dir, s.ID)
 	s.lastTouch.Store(time.Now().UnixNano())
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
@@ -198,7 +291,7 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 	m.cleanup(replaced)
 
 	m.log.Info("transcode started", "session", s.ID, "item", itemID, "protocol", "hls",
-		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String())
+		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String(), "preset", presetLog(p))
 	go m.runHLS(ctx, s, r, attempts)
 	return s, nil
 }
@@ -217,7 +310,7 @@ func (m *Manager) runHLS(ctx context.Context, s *Session, r Request, attempts []
 		cmd.Dir = s.dir
 		var stderr bytes.Buffer
 		cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
-		err := cmd.Run()
+		err := m.runThrottled(cmd, s)
 		if err == nil || ctx.Err() != nil {
 			return
 		}
@@ -327,7 +420,8 @@ func (m *Manager) List() []Info {
 			complete = true
 		default:
 		}
-		out = append(out, Info{ID: s.ID, ItemID: s.ItemID, Protocol: "hls", Plan: s.Plan, Pipeline: *s.pipeline.Load(), Complete: complete})
+		out = append(out, Info{ID: s.ID, ItemID: s.ItemID, Protocol: "hls", Plan: s.Plan, Pipeline: *s.pipeline.Load(),
+			Complete: complete, Throttled: s.throttled.Load()})
 	}
 	for st := range m.streams {
 		out = append(out, Info{ID: st.id, ItemID: st.itemID, Protocol: "http", Plan: st.plan, Pipeline: st.pipeline})
@@ -400,6 +494,8 @@ func (m *Manager) Segment(ctx context.Context, s *Session, name string) (string,
 	if !segmentRE.MatchString(name) {
 		return "", ErrNotFound
 	}
+	n, _ := strconv.Atoi(strings.TrimSuffix(name, ".ts"))
+	s.requestSegment(n)
 	playlist := filepath.Join(s.dir, "index.m3u8")
 	return filepath.Join(s.dir, name), m.wait(ctx, s, func() bool {
 		segs, _ := listedSegments(playlist)
@@ -469,7 +565,8 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 		m.mu.Unlock()
 		return ErrBusy
 	}
-	st := &streamInfo{id: newID(), itemID: itemID, plan: p, started: time.Now()}
+	load := m.choosePresetLocked(r, &p)
+	st := &streamInfo{id: newID(), itemID: itemID, plan: p, started: time.Now(), load: load}
 	m.streams[st] = struct{}{}
 	m.mu.Unlock()
 	defer func() {
@@ -495,7 +592,7 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 	}
 	attempts := Pipelines(m.hw, p)
 	m.log.Info("transcode started", "session", st.id, "item", itemID, "protocol", "http",
-		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String())
+		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String(), "preset", presetLog(p))
 	for i, pl := range attempts {
 		m.mu.Lock()
 		st.pipeline = pl
@@ -565,6 +662,15 @@ func (m *Manager) streamOnce(ctx context.Context, r Request, p Plan, pl Pipeline
 		return true, ffmpegError(waitErr, &stderr)
 	}
 	return true, nil
+}
+
+// presetLog is the libx264 preset of a plan for logs, or "" when video is
+// copied.
+func presetLog(p Plan) string {
+	if p.CopyVideo {
+		return ""
+	}
+	return cmp.Or(p.Preset, DefaultPreset)
 }
 
 func decision(copy bool) string {

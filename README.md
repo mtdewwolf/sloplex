@@ -36,6 +36,7 @@ Sloplex is a standalone product:
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
+| CPU-only transcoding               | ✅ tone mapping at output size, benchmark-driven adaptive x264 preset, HLS throttling |
 | Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in, WebVTT renditions in HLS |
 
 ## Quick start
@@ -172,6 +173,29 @@ GPU access in containers:
 
 Set `"hwaccel": "none"` to always use software.
 
+### CPU-only transcoding
+
+Without a GPU, Sloplex does three things to keep playback smooth:
+
+- **HDR tone mapping at the output size.** When downscaling, the picture
+  is resized before the expensive tone-mapping math. 4K HDR to 1080p needs
+  about 2.5 times less CPU, and 4K to 720p about 3.7 times less.
+- **Adaptive x264 preset.** With `"x264Preset": "auto"` (the default),
+  Sloplex measures libx264 at startup. Each transcode then gets the
+  best-quality preset that still keeps up with real time, given everything
+  else that is transcoding.
+  - An idle server uses `faster`.
+  - A busy server, or a heavy source such as 4K HEVC HDR, moves down
+    through `veryfast` and `superfast` to `ultrafast`.
+  - Set a preset name to use that preset always.
+- **Throttling.** An HLS transcode that gets more than 90 s ahead of the
+  player is paused until the lead falls to 45 s. This leaves the CPU free
+  for other streams.
+
+On a 4-core machine, a 4K HDR to 1080p stream now starts in 6 s instead of
+17 s, and transcodes 2.7 times faster. See "CPU transcoding" in
+[docs/spec/transcode.md](docs/spec/transcode.md).
+
 ## Configuration
 
 | Key               | Default        | Meaning                                                   |
@@ -187,6 +211,8 @@ Set `"hwaccel": "none"` to always use software.
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
 | `hwaccel`         | `"auto"`       | `auto`, `none`, `vaapi`, `qsv`, `nvenc`, or `videotoolbox` |
 | `hwaccelDevice`   | `/dev/dri/renderD128` | GPU render node for `vaapi` and `qsv`              |
+| `x264Preset`      | `"auto"`       | `auto`, or one of `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` |
+| `transcodeThrottle` | `true`       | Pause HLS transcodes that are far ahead of the player     |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout

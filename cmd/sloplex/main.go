@@ -122,12 +122,16 @@ func run(configPath string, log *slog.Logger) error {
 	}
 	tc, err := transcode.New(transcode.Options{
 		FFmpeg: ffmpeg, Dir: filepath.Join(cfg.DataDir, "transcode"), MaxTranscodes: cfg.MaxTranscodes,
-		HW: hw, Requested: cfg.Hwaccel, Log: log,
+		HW: hw, Requested: cfg.Hwaccel, Preset: cfg.X264Preset, Throttle: cfg.TranscodeThrottle, Log: log,
 	})
 	if err != nil {
 		return err
 	}
 	defer tc.Close()
+	if ffmpeg != "" && cfg.X264Preset == transcode.PresetAuto {
+		// Software transcodes use the default preset until this finishes.
+		go func() { tc.SetCapacity(transcode.Benchmark(ctx, ffmpeg, log)) }()
+	}
 
 	scanner := library.NewScanner(store, prober, log)
 	defer scanner.Wait()

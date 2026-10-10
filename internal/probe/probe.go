@@ -27,14 +27,17 @@ type Info struct {
 	Streams []Stream `json:"streams,omitempty"`
 	// HDR is "pq" or "hlg" when the first video stream is HDR.
 	HDR string `json:"hdr,omitempty"`
+	// FrameRate is the first video stream's average frame rate, or 0 if
+	// unknown.
+	FrameRate float64 `json:"frameRate,omitempty"`
 	// ProbeVersion is Version when the file was probed by ffprobe, so
 	// libraries probed by older versions are re-probed once.
 	ProbeVersion int `json:"probeVersion,omitempty"`
 }
 
 // Version is the current probe format version: 2 added streams, 3 added
-// color information.
-const Version = 3
+// color information, 4 added the frame rate.
+const Version = 4
 
 // HDR transfer kinds.
 const (
@@ -175,6 +178,8 @@ type ffprobeOutput struct {
 		ChannelLayout string            `json:"channel_layout"`
 		ColorTransfer string            `json:"color_transfer"`
 		ColorPrims    string            `json:"color_primaries"`
+		AvgFrameRate  string            `json:"avg_frame_rate"`
+		RFrameRate    string            `json:"r_frame_rate"`
 		Tags          map[string]string `json:"tags"`
 		Disposition   map[string]int    `json:"disposition"`
 	} `json:"streams"`
@@ -213,6 +218,10 @@ func parseFFprobe(b []byte) (Info, error) {
 			if info.VideoCodec == "" {
 				info.VideoCodec, info.Width, info.Height = s.CodecName, s.Width, s.Height
 				info.HDR = HDRKind(s.ColorTransfer)
+				info.FrameRate = parseRate(s.AvgFrameRate)
+				if info.FrameRate == 0 {
+					info.FrameRate = parseRate(s.RFrameRate)
+				}
 			}
 		case StreamAudio:
 			st.Channels, st.ChannelLayout = s.Channels, s.ChannelLayout
@@ -223,4 +232,20 @@ func parseFFprobe(b []byte) (Info, error) {
 		info.Streams = append(info.Streams, st)
 	}
 	return info, nil
+}
+
+// parseRate parses an ffprobe rational such as "24000/1001", rounded to
+// three decimals. Unknown ("0/0") or implausible rates give 0.
+func parseRate(v string) float64 {
+	num, den, ok := strings.Cut(v, "/")
+	n, err1 := strconv.ParseFloat(num, 64)
+	d := 1.0
+	var err2 error
+	if ok {
+		d, err2 = strconv.ParseFloat(den, 64)
+	}
+	if err1 != nil || err2 != nil || d <= 0 || n <= 0 || n/d > 1000 {
+		return 0
+	}
+	return math.Round(n/d*1000) / 1000
 }

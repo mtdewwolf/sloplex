@@ -72,6 +72,51 @@ func TestBurnPGSSubtitles(t *testing.T) {
 	}
 }
 
+// TestBurnPGSOnDownscaledHDR burns a PGS subtitle into an HDR source that is
+// tone mapped at a smaller output size, so the subtitle canvas has to be
+// scaled to match the picture.
+func TestBurnPGSOnDownscaledHDR(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	dir := t.TempDir()
+	hdr := filepath.Join(dir, "hdr.mkv")
+	testutil.WriteHDRClip(t, ffmpeg, hdr, "smpte2084", 64, 64) // black
+	sup := filepath.Join(dir, "subs.sup")
+	testutil.WriteSUP(t, sup, 640, 360, 220, 260, 200, 60, 500, 1500)
+	video := filepath.Join(dir, "uhd.mkv")
+	if out, err := exec.Command(ffmpeg, "-v", "error", "-i", hdr, "-i", sup,
+		"-map", "0", "-map", "1", "-c", "copy", "-copyts", video).CombinedOutput(); err != nil {
+		t.Fatalf("muxing the PGS track failed: %v %s", err, out)
+	}
+	m, err := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(dir, "tc"), MaxTranscodes: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	var buf bytes.Buffer
+	r := Request{Input: video, Burn: &Burn{Index: 1}, MaxWidth: 320, MaxHeight: 180,
+		Source: probe.Info{VideoCodec: "hevc", Width: 640, Height: 360, HDR: probe.HDRPQ}}
+	if err := m.Stream(context.Background(), 1, r, &buf, func(Plan) {}); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out.mp4")
+	if err := os.WriteFile(out, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The 200×60 box at (220, 260) becomes 100×30 at (110, 130).
+	if n := testutil.BrightPixels(t, ffmpeg, out, "1.0"); n < 100*30/2 || n > 100*30*2 {
+		t.Errorf("PGS box at 1s: %d bright pixels, want about %d", n, 100*30)
+	}
+	if mid := testutil.AverageLuma(t, ffmpeg, out, "1.0", "100:30:110:130"); mid < 200 {
+		t.Errorf("PGS box not where the scaled canvas puts it: average luma %d", mid)
+	}
+	if n := testutil.BrightPixels(t, ffmpeg, out, "1.8"); n != 0 {
+		t.Errorf("PGS box still visible after it ends: %d bright pixels", n)
+	}
+}
+
 type probeRunner struct{}
 
 func (probeRunner) streams(path string) (string, error) {
