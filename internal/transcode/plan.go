@@ -33,6 +33,9 @@ type Request struct {
 	Burn *Burn
 	// PartID identifies the source part for callers; ffmpeg ignores it.
 	PartID int
+	// WebM selects VP9/Opus in WebM instead of H.264/AAC in MP4, for
+	// progressive streams only; see "WebM" in docs/spec/transcode.md.
+	WebM bool
 }
 
 // Burn describes a subtitle to burn in; see docs/spec/streams.md.
@@ -63,6 +66,8 @@ type Plan struct {
 	Burn bool
 	// ToneMap is set when an HDR source is tone mapped to SDR.
 	ToneMap bool
+	// WebM is set for VP9/Opus output.
+	WebM bool
 	// Preset is the libx264 preset for the software pipeline; empty means
 	// DefaultPreset. The Manager sets it; see "CPU transcoding".
 	Preset string
@@ -71,14 +76,18 @@ type Plan struct {
 // Decide applies the decision rules.
 func Decide(r Request) Plan {
 	src := r.Source
-	p := Plan{HasAudio: src.AudioCodec != ""}
-	p.CopyAudio = p.HasAudio && src.AudioCodec == "aac" && src.AudioChannels > 0 && src.AudioChannels <= 2
+	p := Plan{HasAudio: src.AudioCodec != "", WebM: r.WebM}
+	videoCodec, audioCodec := "h264", "aac"
+	if r.WebM {
+		videoCodec, audioCodec = "vp9", "opus"
+	}
+	p.CopyAudio = p.HasAudio && src.AudioCodec == audioCodec && src.AudioChannels > 0 && src.AudioChannels <= 2
 
 	fits := (r.MaxWidth == 0 || src.Width <= r.MaxWidth) && (r.MaxHeight == 0 || src.Height <= r.MaxHeight)
 	withinRate := r.MaxBitrate == 0 || (src.Bitrate > 0 && src.Bitrate <= r.MaxBitrate)
 	p.Burn = r.Burn != nil
 	p.ToneMap = src.HDR != ""
-	p.CopyVideo = src.VideoCodec == "h264" && fits && withinRate && !r.NoDirectStream && !p.Burn && !p.ToneMap
+	p.CopyVideo = src.VideoCodec == videoCodec && fits && withinRate && !r.NoDirectStream && !p.Burn && !p.ToneMap
 
 	p.Width, p.Height = src.Width, src.Height
 	if !p.CopyVideo {
@@ -171,9 +180,10 @@ func (p Pipeline) String() string {
 }
 
 // Pipelines lists the pipelines to try for a plan, fastest first. Copied
-// video needs no encoder, so only the software pipeline is used.
+// video needs no encoder, and VP9 is only encoded in software, so those use
+// only the software pipeline.
 func Pipelines(hw HW, p Plan) []Pipeline {
-	if p.CopyVideo || hw.Accel == "" {
+	if p.CopyVideo || p.WebM || hw.Accel == "" {
 		return []Pipeline{{}}
 	}
 	full := Pipeline{Accel: hw.Accel, Device: hw.Device, Full: true}
@@ -251,7 +261,11 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 	if !encode {
 		args = append(args, "-c:v", "copy")
 	} else {
-		args = append(args, "-c:v", Encoder(pl.Accel))
+		if p.WebM {
+			args = append(args, "-c:v", "libvpx-vp9")
+		} else {
+			args = append(args, "-c:v", Encoder(pl.Accel))
+		}
 		if p.ToneMap {
 			args = append(args, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709")
 		}
@@ -261,9 +275,12 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 		}
 	}
 	if p.HasAudio {
-		if p.CopyAudio {
+		switch {
+		case p.CopyAudio:
 			args = append(args, "-c:a", "copy")
-		} else {
+		case p.WebM:
+			args = append(args, "-c:a", "libopus", "-ac", "2", "-b:a", "128k")
+		default:
 			args = append(args, "-c:a", "aac", "-ac", "2", "-b:a", "160k")
 		}
 	}
@@ -279,6 +296,11 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 			out.HLSDir+"/index.m3u8")
 	case out.Null:
 		return append(args, "-f", "null", "-")
+	case p.WebM:
+		// Matroska sources carry per-stream DURATION tags for the whole
+		// file; copied into a stream that starts at an offset, browsers
+		// would take them as its length.
+		return append(args, "-metadata:s", "DURATION=", "-f", "webm", "pipe:1")
 	}
 	return append(args, "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")
 }
@@ -400,6 +422,14 @@ func rateControl(r Request, p Plan, pl Pipeline) []string {
 	}
 	target := func() []string {
 		return append([]string{"-b:v", fmt.Sprintf("%dk", r.MaxBitrate*8/10)}, capArgs()...)
+	}
+	if p.WebM {
+		// Realtime VP9: constant quality, capped by -b:v when a cap is set.
+		out := []string{"-deadline", "realtime", "-cpu-used", "8", "-row-mt", "1", "-crf", "32", "-pix_fmt", "yuv420p"}
+		if r.MaxBitrate > 0 {
+			return append(append(out, "-b:v", fmt.Sprintf("%dk", r.MaxBitrate)), capArgs()...)
+		}
+		return append(out, "-b:v", "0")
 	}
 	switch pl.Accel {
 	case "":

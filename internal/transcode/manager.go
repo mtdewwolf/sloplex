@@ -21,6 +21,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mtdewwolf/sloplex/internal/probe"
 )
 
 // Errors returned by Manager.
@@ -84,6 +86,7 @@ type streamInfo struct {
 	id       string
 	itemID   int
 	plan     Plan
+	source   probe.Info
 	started  time.Time
 	load     float64
 	pipeline Pipeline // guarded by Manager.mu
@@ -155,7 +158,19 @@ func (m *Manager) setThrottleLimits(pause, resume, tick time.Duration) {
 
 // SetCapacity sets the measured software encoding capacity used by auto
 // presets.
-func (m *Manager) SetCapacity(c Capacity) { m.mu.Lock(); m.capacity = c; m.mu.Unlock() }
+func (m *Manager) SetCapacity(c Capacity) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.capacity = maps.Clone(c)
+	// Existing encodes retain their preset, but must start contributing to
+	// load estimates once the asynchronous benchmark is available.
+	for _, s := range m.sessions {
+		s.load = m.capacity.Load(s.Request.Source, s.Plan, s.Plan.Preset)
+	}
+	for st := range m.streams {
+		st.load = m.capacity.Load(st.source, st.plan, st.plan.Preset)
+	}
+}
 
 // Capacity returns the measured software encoding capacity, or nil.
 func (m *Manager) Capacity() Capacity {
@@ -170,8 +185,8 @@ func (m *Manager) Preset() string { return cmp.Or(m.preset, PresetAuto) }
 // Throttle reports whether HLS throttling is on and supported.
 func (m *Manager) Throttle() bool { return m.throttle && canThrottle }
 
-// SoftwareLoad is the estimated share of the machine the running software
-// encodes need to keep up with real time.
+// SoftwareLoad is the estimated CPU share for active encodes and filters,
+// including conservative reservations for uncalibrated VP9 encoding.
 func (m *Manager) SoftwareLoad() float64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -187,13 +202,17 @@ func (m *Manager) softwareLoadLocked() float64 {
 			continue
 		default:
 		}
-		if s.pipeline.Load().Accel == "" {
+		if pl := s.pipeline.Load(); pl.Accel == "" {
 			total += s.load
+		} else if !pl.Full {
+			total += m.capacity.filterLoad(s.Request.Source, s.Plan)
 		}
 	}
 	for st := range m.streams {
 		if st.pipeline.Accel == "" {
 			total += st.load
+		} else if !st.pipeline.Full {
+			total += m.capacity.filterLoad(st.source, st.plan)
 		}
 	}
 	return total
@@ -202,6 +221,10 @@ func (m *Manager) softwareLoadLocked() float64 {
 // choosePresetLocked sets the software preset of a plan and returns its
 // estimated load. It must hold m.mu.
 func (m *Manager) choosePresetLocked(r Request, p *Plan) float64 {
+	if p.WebM {
+		p.Preset = ""
+		return m.capacity.Load(r.Source, *p, "")
+	}
 	if m.preset != "" && m.preset != PresetAuto {
 		p.Preset = m.preset
 		return m.capacity.Load(r.Source, *p, m.preset)
@@ -566,7 +589,7 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 		return ErrBusy
 	}
 	load := m.choosePresetLocked(r, &p)
-	st := &streamInfo{id: newID(), itemID: itemID, plan: p, started: time.Now(), load: load}
+	st := &streamInfo{id: newID(), itemID: itemID, plan: p, source: r.Source, started: time.Now(), load: load}
 	m.streams[st] = struct{}{}
 	m.mu.Unlock()
 	defer func() {
@@ -667,7 +690,7 @@ func (m *Manager) streamOnce(ctx context.Context, r Request, p Plan, pl Pipeline
 // presetLog is the libx264 preset of a plan for logs, or "" when video is
 // copied.
 func presetLog(p Plan) string {
-	if p.CopyVideo {
+	if p.CopyVideo || p.WebM {
 		return ""
 	}
 	return cmp.Or(p.Preset, DefaultPreset)

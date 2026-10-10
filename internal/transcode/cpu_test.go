@@ -150,23 +150,24 @@ func TestManagerPresets(t *testing.T) {
 		t.Errorf("idle machine: preset %q", p.Preset)
 	}
 
-	// A running session's load pushes the next transcode to a faster preset.
-	s, err := m.StartHLS(1, "", 1, Request{Input: path, Source: clipInfo})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Keep the scheduling input deterministic: a two-second real encoder
+	// can finish before the second stream acquires the scheduling lock.
+	s := &Session{done: make(chan struct{}), load: 0.7}
+	s.pipeline.Store(&Pipeline{})
 	m.mu.Lock()
-	s.load = 0.7
+	m.sessions["scheduling-test"] = s
 	m.mu.Unlock()
-	if p := stream(m); p.Preset != "ultrafast" {
+	defer func() { m.mu.Lock(); delete(m.sessions, "scheduling-test"); m.mu.Unlock() }()
+	p := stream(m)
+	load := m.SoftwareLoad()
+	m.mu.Lock()
+	delete(m.sessions, "scheduling-test")
+	m.mu.Unlock()
+	if p.Preset != "ultrafast" {
 		t.Errorf("loaded machine: preset %q", p.Preset)
 	}
-	if l := m.SoftwareLoad(); l != 0.7 {
-		select {
-		case <-s.done: // finished already; it no longer counts
-		default:
-			t.Errorf("SoftwareLoad = %v, want 0.7", l)
-		}
+	if load != 0.7 {
+		t.Errorf("SoftwareLoad = %v, want 0.7", load)
 	}
 
 	fixed, _ := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc2"), MaxTranscodes: 1, Preset: "superfast"})
@@ -174,5 +175,66 @@ func TestManagerPresets(t *testing.T) {
 	fixed.SetCapacity(testCapacity)
 	if p := stream(fixed); p.Preset != "superfast" {
 		t.Errorf("configured preset: %q", p.Preset)
+	}
+}
+
+func TestWebMReservation(t *testing.T) {
+	r := Request{Source: clipInfo, WebM: true}
+	for _, configured := range []string{"", "auto", "medium", "ultrafast"} {
+		m := &Manager{preset: configured, capacity: testCapacity}
+		p := Decide(r)
+		if load := m.choosePresetLocked(r, &p); load != targetLoad || p.Preset != "" || presetLog(p) != "" {
+			t.Fatalf("configured %q: plan %+v load %v", configured, p, load)
+		}
+		args := strings.Join(Args(r, p, Output{}, Pipeline{}), " ")
+		if !strings.Contains(args, "-c:v libvpx-vp9") || strings.Contains(args, "-preset") {
+			t.Fatal(args)
+		}
+	}
+	r.Source.VideoCodec = "vp9"
+	if load := testCapacity.Load(r.Source, Decide(r), "medium"); load != 0 {
+		t.Fatalf("copied VP9 load %v", load)
+	}
+}
+
+func TestCapacityRefreshesExistingEncodes(t *testing.T) {
+	r := Request{Source: clipInfo}
+	p := Decide(r)
+	p.Preset = DefaultPreset
+	s := &Session{Request: r, Plan: p, done: make(chan struct{})}
+	s.pipeline.Store(&Pipeline{})
+	st := &streamInfo{source: r.Source, plan: p}
+	m := &Manager{sessions: map[string]*Session{"test": s}, streams: map[*streamInfo]struct{}{st: {}}}
+	c := Capacity{}
+	for k, v := range testCapacity {
+		c[k] = v
+	}
+	m.SetCapacity(c)
+	want := 2 * testCapacity.Load(r.Source, p, DefaultPreset)
+	if got := m.SoftwareLoad(); got <= 0 || got != want {
+		t.Fatalf("load %v, want %v", got, want)
+	}
+	if s.Plan.Preset != DefaultPreset || st.plan.Preset != DefaultPreset {
+		t.Fatal("running preset changed")
+	}
+	c[DefaultPreset] = 1
+	if m.Capacity()[DefaultPreset] != testCapacity[DefaultPreset] {
+		t.Fatal("capacity aliases caller map")
+	}
+}
+
+func TestPartialHardwareCountsCPUFilters(t *testing.T) {
+	r := Request{Source: probe.Info{VideoCodec: "hevc", Width: 3840, Height: 2160, FrameRate: 24, HDR: probe.HDRPQ}, MaxWidth: 1280, MaxHeight: 720}
+	p := Decide(r)
+	s := &Session{Request: r, Plan: p, done: make(chan struct{})}
+	s.pipeline.Store(&Pipeline{Accel: AccelNVENC})
+	m := &Manager{sessions: map[string]*Session{"test": s}}
+	m.SetCapacity(testCapacity)
+	if got, full := m.SoftwareLoad(), testCapacity.Load(r.Source, p, DefaultPreset); got <= 0 || got >= full {
+		t.Fatalf("partial hardware load %v, software %v", got, full)
+	}
+	s.pipeline.Store(&Pipeline{Accel: AccelNVENC, Full: true})
+	if got := m.SoftwareLoad(); got != 0 {
+		t.Fatalf("full hardware CPU load %v", got)
 	}
 }

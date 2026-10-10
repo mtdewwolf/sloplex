@@ -67,3 +67,67 @@ func TestServe(t *testing.T) {
 		t.Fatal("Serve did not stop on cancel")
 	}
 }
+
+func TestHelloBye(t *testing.T) {
+	a := Announcement{MachineID: "abc\r\n", Name: "Den", Version: "0.1", Port: 32400, UpdatedAt: 42}
+	if got, want := string(Hello(a)), "HELLO * HTTP/1.0\r\nContent-Type: plex/media-server\r\nResource-Identifier: abc\r\n"+
+		"Name: Den\r\nPort: 32400\r\nVersion: 0.1\r\nUpdated-At: 42\r\n\r\n"; got != want {
+		t.Errorf("Hello =\n%q\nwant\n%q", got, want)
+	}
+	if got, want := string(Bye(a)), "BYE * HTTP/1.0\r\nContent-Type: plex/media-server\r\nResource-Identifier: abc\r\n\r\n"; got != want {
+		t.Errorf("Bye =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestAnnounce(t *testing.T) {
+	old := helloAt
+	helloAt = []time.Duration{0, 50 * time.Millisecond, 100 * time.Millisecond}
+	defer func() { helloAt = old }()
+
+	l, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	// An unreachable target is skipped without stopping the others.
+	targets := []*net.UDPAddr{{IP: net.IPv4(127, 0, 0, 1), Port: 0}, l.LocalAddr().(*net.UDPAddr)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Announce(ctx, func() Announcement { return Announcement{MachineID: "m1", Name: "srv", Port: 32400} }, targets, slog.New(slog.DiscardHandler))
+	}()
+
+	read := func() string {
+		_ = l.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, 2048)
+		n, _, err := l.ReadFromUDP(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.SplitN(string(buf[:n]), "\r\n", 2)[0]
+	}
+	for i := 0; i < 3; i++ {
+		if got := read(); got != "HELLO * HTTP/1.0" {
+			t.Fatalf("announcement %d = %q", i, got)
+		}
+	}
+	cancel()
+	if got := read(); got != "BYE * HTTP/1.0" {
+		t.Fatalf("after cancel = %q", got)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Announce did not return after BYE")
+	}
+
+	// Cancelled before the HELLOs finish: BYE follows at once.
+	ctx, cancel = context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	Announce(ctx, func() Announcement { return Announcement{MachineID: "m1"} }, targets[1:], slog.New(slog.DiscardHandler))
+	if got := read(); got != "BYE * HTTP/1.0" || time.Since(start) > time.Second {
+		t.Errorf("early cancel: %q after %v", got, time.Since(start))
+	}
+}

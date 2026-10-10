@@ -196,7 +196,7 @@ function tile(item) {
   }
   let sub = item.year ? String(item.year) : "";
   if (item.type === "episode") {
-    sub = `${item.grandparentTitle || ""} · S${item.parentIndex}E${item.index}`;
+    sub = `${item.grandparentTitle || ""} · ${episodeLabel(item)}`;
   } else if (item.type === "season") {
     sub = `${item.leafCount || 0} episodes`;
   }
@@ -240,6 +240,7 @@ async function viewItem(id) {
     const heading = item.type === "season" ? `${item.parentTitle} · ${item.title}` : item.title;
     render(
       el("h1", { text: heading }),
+      item.summary ? el("p", { class: "summary", text: item.summary }) : null,
       el("div", { class: "row" },
         watchButtons(item, () => viewItem(id))),
       el("h2", { text: item.type === "show" ? "Seasons" : "Episodes" }),
@@ -253,9 +254,19 @@ async function viewItem(id) {
   const add = (k, v) => { if (v) facts.push(el("dt", { text: k }), el("dd", { text: v })); };
   if (item.type === "episode") {
     add("Show", item.grandparentTitle);
-    add("Episode", `Season ${item.parentIndex}, episode ${item.index}`);
+    if (!dateBased(item)) add("Episode", `Season ${item.parentIndex}, episode ${item.index}`);
+    add("Aired", item.originallyAvailableAt);
   }
   add("Year", item.year && String(item.year));
+  if (item.type === "movie") add("Released", item.originallyAvailableAt);
+  add("Rated", item.contentRating);
+  add("Rating", item.rating ? `${item.rating} / 10` : "");
+  const names = (list) => (list || []).map((t) => t.tag).join(", ");
+  add("Genre", names(item.Genre));
+  add("Director", names(item.Director));
+  add("Writer", names(item.Writer));
+  add("Studio", item.studio);
+  add("Collection", names(item.Collection));
   add("Duration", fmtDuration(item.duration));
   const res = { sd: "SD", "4k": "4K" }[media && media.videoResolution] || (media && media.videoResolution ? media.videoResolution + "p" : "");
   if (media) add("Video", [res, media.videoCodec, media.container].filter(Boolean).join(" · "));
@@ -274,7 +285,11 @@ async function viewItem(id) {
       el("div", { class: "art" }, art ? el("img", { src: posterURL(art), alt: "" }) : null),
       el("div", {},
         el("h1", { text: item.title }),
+        item.originalTitle ? el("p", { class: "muted", text: item.originalTitle }) : null,
+        item.tagline ? el("p", { class: "tagline", text: item.tagline }) : null,
+        item.summary ? el("p", { class: "summary", text: item.summary }) : null,
         el("dl", {}, facts),
+        castList(item.Role),
         tracks ? tracks.node : null,
         el("div", { class: "row" },
           part ? el("button", {
@@ -285,6 +300,15 @@ async function viewItem(id) {
           }) : null,
           watchButtons(item, () => viewItem(id))),
         player)));
+}
+
+// castList shows up to 12 cast members and the characters they play.
+function castList(roles) {
+  if (!roles || !roles.length) return null;
+  return el("div", { class: "cast" },
+    el("h2", { text: "Cast" }),
+    el("ul", {}, roles.slice(0, 12).map((r) => el("li", {},
+      el("strong", { text: r.tag }), r.role ? el("span", { class: "muted", text: ` as ${r.role}` }) : null))));
 }
 
 // trackPickers builds the audio and subtitle selects of a part (see
@@ -318,6 +342,14 @@ function trackPickers(part, onChange) {
   };
 }
 
+// Date-based episodes are numbered by year and month/day (see "Date-based
+// episodes" in docs/spec/http-api.md), so they are labelled by air date.
+function dateBased(item) { return item.parentIndex >= 1000 && !!item.originallyAvailableAt; }
+
+function episodeLabel(item) {
+  return dateBased(item) ? item.originallyAvailableAt : `S${item.parentIndex}E${item.index}`;
+}
+
 function watchButtons(item, refresh) {
   const leaf = item.type === "movie" || item.type === "episode";
   const watched = leaf ? item.viewCount > 0 : item.viewedLeafCount >= item.leafCount;
@@ -334,22 +366,28 @@ function watchButtons(item, refresh) {
 
 // play starts a part at `startAt` seconds and returns a handle with the
 // current position. It direct-plays when the browser can show the chosen
-// tracks, and otherwise uses a transcoded MP4 stream (see
-// docs/spec/transcode.md and streams.md):
-// - a non-first audio track or an image subtitle needs a transcode;
-// - text subtitles are a WebVTT <track>, shifted to match a transcode.
-// In transcoded mode the stream starts at `base` seconds, so positions add it
-// back and seeking restarts the stream.
+// tracks, and otherwise converts (see docs/spec/transcode.md, streams.md and
+// web.md):
+// - a non-first audio track or an image subtitle needs a conversion;
+// - text subtitles are a WebVTT <track>, shifted to match a conversion;
+// - conversions are MP4 (H.264) when the browser plays it, else WebM (VP9).
+// A converted stream starts at `base` seconds of the source, so it gets its
+// own controls: the seek bar spans the whole item, seeks inside what has
+// already arrived stay in the stream, and other seeks restart it there.
 function play(holder, item, part, choice, startAt = 0) {
   const video = el("video", { controls: true, autoplay: true, preload: "metadata" });
+  const wrap = el("div", { class: "player" }, video);
   const textSub = choice.sub && choice.sub.key ? choice.sub : null;
   const needsTranscode = (choice.audio && choice.firstAudio && choice.audio.id !== choice.firstAudio.id) ||
     (choice.sub && !choice.sub.key);
+  const format = video.canPlayType('video/mp4; codecs="avc1.640028, mp4a.40.2"') ? "mp4"
+    : video.canPlayType('video/webm; codecs="vp9, opus"') ? "webm" : "";
   let transcoding = false;
-  let restarting = false;
   let base = 0;
   let last = 0;
-  const position = () => base + (video.currentTime || 0);
+  let controls = null;
+  const total = (part.duration || item.duration || 0) / 1000;
+  const position = () => Math.min(base + (video.currentTime || 0), total || Infinity);
   const durationMs = () => (transcoding ? 0 : Math.floor((video.duration || 0) * 1000)) || item.duration || 0;
   const report = (st) => {
     const t = Math.floor(position() * 1000);
@@ -367,24 +405,106 @@ function play(holder, item, part, choice, startAt = 0) {
     video.append(track);
     track.track.mode = "showing";
   };
-  const startTranscode = (at) => {
+  const startTranscode = (at, paused = false) => {
     transcoding = true;
-    restarting = true;
     base = Math.max(0, at);
     const q = new URLSearchParams({ path: item.key, offset: base.toFixed(1), subtitles: "auto" });
+    if (format === "webm") q.set("videoResolution", "1280x720");
     if (choice.audio) q.set("audioStreamID", choice.audio.id);
     q.set("subtitleStreamID", choice.sub ? choice.sub.id : 0);
-    video.src = withToken("/video/:/transcode/universal/start.mp4?" + q);
+    if (!controls) controls = convertedControls();
+    controls.loading(true);
+    video.autoplay = !paused;
+    video.src = withToken(`/video/:/transcode/universal/start.${format}?` + q);
     setTrack();
-    video.play().catch(() => {});
+    if (!paused) video.play().catch(() => {});
   };
+
+  // convertedControls replaces the native controls in converted mode.
+  function convertedControls() {
+    video.controls = false;
+    const playBtn = el("button", { type: "button", class: "play", "aria-label": "Pause", text: "❚❚" });
+    const bar = el("input", { type: "range", class: "seek", "aria-label": "Seek", min: 0, max: total || 1, step: "any", value: 0 });
+    const clock = el("span", { class: "clock" });
+    const muteBtn = el("button", { type: "button", "aria-label": "Mute", text: "🔊" });
+    const fullBtn = el("button", { type: "button", "aria-label": "Full screen", text: "⛶" });
+    const spinner = el("div", { class: "loading", text: "Converting…", hidden: true });
+    let dragging = false;
+    let timer = 0;
+    let target = null;
+    const show = (t) => {
+      if (!dragging) bar.value = t;
+      clock.textContent = `${fmtClock(t * 1000)} / ${fmtClock(total * 1000)}`;
+    };
+    // local reports whether stream time t has arrived and the browser can
+    // seek to it. Browsers that treat the stream as live (Chromium does)
+    // report nothing seekable, so every seek restarts there.
+    const within = (ranges, t, margin) => {
+      for (let i = 0; i < ranges.length; i++) {
+        if (t >= ranges.start(i) && t <= ranges.end(i) - margin) return true;
+      }
+      return false;
+    };
+    const local = (t) => within(video.buffered, t, 0.5) && within(video.seekable, t, 0);
+    // seek moves to source time t. Restarts are debounced, so dragging or
+    // repeated key presses start one conversion, not many.
+    const seek = (t) => {
+      t = Math.min(Math.max(0, t), Math.max(0, total - 1));
+      target = t;
+      show(t);
+      clearTimeout(timer);
+      if (t >= base && local(t - base)) {
+        target = null;
+        video.currentTime = t - base;
+        return;
+      }
+      timer = setTimeout(() => {
+        target = null;
+        if (wrap.isConnected) startTranscode(t, video.paused); // not if the player was replaced
+      }, 350);
+    };
+    const toggle = () => (video.paused ? video.play().catch(() => {}) : video.pause());
+    playBtn.addEventListener("click", toggle);
+    video.addEventListener("click", toggle);
+    muteBtn.addEventListener("click", () => { video.muted = !video.muted; });
+    fullBtn.addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else wrap.requestFullscreen().catch(() => {});
+    });
+    bar.addEventListener("input", () => { dragging = true; show(Number(bar.value)); });
+    bar.addEventListener("change", () => { dragging = false; seek(Number(bar.value)); });
+    wrap.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "BUTTON" && (e.key === " " || e.key === "Enter")) return;
+      const from = target ?? position();
+      const keys = {
+        " ": toggle, k: toggle, m: () => muteBtn.click(), f: () => fullBtn.click(),
+        ArrowLeft: () => seek(from - 10), ArrowRight: () => seek(from + 10),
+        Home: () => seek(0), End: () => seek(total),
+      };
+      if (!keys[e.key]) return;
+      e.preventDefault();
+      keys[e.key]();
+    });
+    const sync = () => {
+      playBtn.textContent = video.paused ? "▶" : "❚❚";
+      playBtn.setAttribute("aria-label", video.paused ? "Play" : "Pause");
+      muteBtn.textContent = video.muted ? "🔇" : "🔊";
+      muteBtn.setAttribute("aria-label", video.muted ? "Unmute" : "Mute");
+    };
+    ["play", "pause", "volumechange"].forEach((ev) => video.addEventListener(ev, sync));
+    video.addEventListener("timeupdate", () => { if (target === null) show(position()); });
+    video.addEventListener("playing", () => { spinner.hidden = true; });
+    video.addEventListener("canplay", () => { spinner.hidden = true; });
+    wrap.tabIndex = 0;
+    wrap.classList.add("converted");
+    wrap.append(spinner, el("div", { class: "controls" }, playBtn, bar, clock, muteBtn, fullBtn));
+    show(base);
+    sync();
+    return { loading: (on) => { spinner.hidden = !on; }, seek };
+  }
 
   video.addEventListener("loadedmetadata", () => {
     if (!transcoding && startAt > 0) video.currentTime = startAt;
-    restarting = false;
-  });
-  video.addEventListener("seeking", () => {
-    if (transcoding && !restarting) startTranscode(position());
   });
   video.addEventListener("timeupdate", () => {
     if (Date.now() - last > 10000) { last = Date.now(); report("playing"); }
@@ -392,11 +512,10 @@ function play(holder, item, part, choice, startAt = 0) {
   video.addEventListener("pause", () => report("paused"));
   video.addEventListener("ended", () => report("stopped"));
   video.addEventListener("error", () => {
-    // Transcodes are H.264/AAC; some browser builds (e.g. Chromium without
-    // proprietary codecs) cannot play them either.
-    const h264 = video.canPlayType('video/mp4; codecs="avc1.640028, mp4a.40.2"') !== "";
-    if (!transcoding && !h264) {
-      holder.replaceChildren(el("p", { class: "error", text: "This browser cannot play this file, and it cannot play H.264 video, which is what Sloplex converts to." }));
+    // Some browser builds (e.g. Chromium without proprietary codecs) play
+    // neither the file nor H.264; those get WebM.
+    if (!transcoding && !format) {
+      holder.replaceChildren(el("p", { class: "error", text: "This browser cannot play this file, and it cannot play the H.264 or VP9 video that Sloplex converts to." }));
       return;
     }
     if (!transcoding) {
@@ -406,14 +525,14 @@ function play(holder, item, part, choice, startAt = 0) {
     }
     holder.replaceChildren(el("p", { class: "error", text: "This file could not be played, even after converting it." }));
   });
-  holder.replaceChildren(video);
-  if (needsTranscode) {
+  holder.replaceChildren(wrap);
+  if (needsTranscode && format) {
     startTranscode(startAt);
   } else {
     video.src = withToken(part.key);
     setTrack();
   }
-  return { position };
+  return { position, seek: (t) => (controls ? controls.seek(t) : (video.currentTime = t)) };
 }
 
 async function viewSearch(query) {
@@ -552,7 +671,7 @@ function transcoderSummary(tc) {
     : `Hardware: ${tc.hwaccel} (${tc.encoder})` + (tc.device ? ` on ${tc.device}` : "");
   let sw = `x264 preset: ${tc.x264Preset}`;
   if (tc.x264Preset === "auto") {
-    sw += tc.benchmark ? ` (${Math.round(tc.benchmark.veryfast)} fps at 720p veryfast; load ${Math.round(tc.softwareLoad * 100)}%)` : " (benchmark pending)";
+    sw += tc.benchmark ? ` (${Math.round(tc.benchmark.veryfast)} fps at 720p veryfast; load ${Math.round(tc.softwareLoad * 100)}%)` : " (benchmark pending or unavailable)";
   }
   return `${hw} · ${sw} · up to ${tc.maxTranscodes} at once` + (tc.throttle ? " · throttled when ahead" : "");
 }

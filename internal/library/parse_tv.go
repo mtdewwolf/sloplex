@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Episode is what a TV file path says about itself.
@@ -15,6 +16,8 @@ type Episode struct {
 	Season   int
 	Episode  int
 	Title    string
+	// Aired is the air date (YYYY-MM-DD) of a date-based episode.
+	Aired string
 }
 
 var (
@@ -27,7 +30,34 @@ var (
 	// leadingNumRE matches a leading episode number such as "02 - Title".
 	leadingNumRE = regexp.MustCompile(`^(\d{1,3})(?:[ .\-]|$)`)
 	seasonDirRE  = regexp.MustCompile(`(?i)^(?:season|series|s)\s*(\d{1,3})$`)
+	// ymdRE and dmyRE match air dates such as 2024-03-15 and 15.03.2024.
+	ymdRE = regexp.MustCompile(`(?:^|[^0-9])((?:19|20)\d\d)[-. _](\d\d)[-. _](\d\d)(?:[^0-9]|$)`)
+	dmyRE = regexp.MustCompile(`(?:^|[^0-9])(\d\d)[-. _](\d\d)[-. _]((?:19|20)\d\d)(?:[^0-9]|$)`)
 )
+
+// airDate finds an air date in s and returns it with the indexes of the
+// whole match (including the delimiting characters).
+func airDate(s string) (date time.Time, start, end int, ok bool) {
+	for _, c := range []struct {
+		re      *regexp.Regexp
+		y, m, d int
+	}{{ymdRE, 1, 2, 3}, {dmyRE, 3, 2, 1}} {
+		m := c.re.FindStringSubmatchIndex(s)
+		if m == nil {
+			continue
+		}
+		num := func(g int) int { n, _ := strconv.Atoi(s[m[2*g]:m[2*g+1]]); return n }
+		y, mo, d := num(c.y), num(c.m), num(c.d)
+		t := time.Date(y, time.Month(mo), d, 0, 0, 0, 0, time.UTC)
+		if t.Year() != y || int(t.Month()) != mo || t.Day() != d {
+			continue // no such day
+		}
+		// Keep the delimiters out of the match, except leading separators.
+		start, end = m[2*min(c.y, c.d)], m[2*max(c.y, c.d)+1]
+		return t, start, end, true
+	}
+	return time.Time{}, 0, 0, false
+}
 
 // seasonDir reports whether a folder name denotes a season, and which.
 func seasonDir(name string) (int, bool) {
@@ -62,6 +92,9 @@ func ParseEpisode(root, path string) (ep Episode, ok bool) {
 	} else if m := xRE.FindStringSubmatchIndex(base); m != nil {
 		ep.Season, ep.Episode = atoi(base[m[2]:m[3]]), atoi(base[m[4]:m[5]])
 		prefix, rest, ok = base[:m[0]], base[m[1]:], true
+	} else if d, start, end, found := airDate(base); found {
+		ep.Season, ep.Episode, ep.Aired = d.Year(), int(d.Month())*100+d.Day(), d.Format(time.DateOnly)
+		prefix, rest, ok = base[:start], base[end:], true
 	} else if len(dirs) > 0 {
 		if season, isSeason := seasonDir(dirs[len(dirs)-1]); isSeason {
 			if m := epOnlyRE.FindStringSubmatchIndex(base); m != nil {
@@ -100,10 +133,14 @@ func episodeTitle(s string) string {
 	return strings.TrimRight(strings.TrimSpace(s), " -([{")
 }
 
-// SeasonTitle is the display title of a season.
+// SeasonTitle is the display title of a season. Seasons of date-based
+// shows are numbered by year and titled with it.
 func SeasonTitle(index int) string {
-	if index == 0 {
+	switch {
+	case index == 0:
 		return "Specials"
+	case index >= 1000:
+		return strconv.Itoa(index)
 	}
 	return fmt.Sprintf("Season %d", index)
 }

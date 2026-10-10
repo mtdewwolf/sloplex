@@ -37,6 +37,21 @@ await page.press("#search-input", "Enter");
 await page.waitForSelector("h2:text('Movies')");
 s.check(await page.isVisible(".tile:has-text('Sintel')"), "search finds Sintel by prefix");
 
+// .nfo metadata on the detail page; markup in it renders as text.
+await page.click("a.tile:has-text('Sintel')");
+await page.waitForSelector("h1:text('Sintel')");
+const meta = await page.evaluate(() => ({
+  summary: document.querySelector(".summary")?.textContent,
+  tagline: document.querySelector(".tagline")?.textContent,
+  facts: [...document.querySelectorAll(".detail dd")].map((d) => d.textContent),
+  cast: document.querySelector(".cast li")?.textContent,
+  bold: !!document.querySelector(".summary b"),
+}));
+s.check(meta.summary === "<b>Open</b> movie by the Blender Institute." && !meta.bold && meta.tagline === "A girl and her dragon" &&
+  ["PG", "7.5 / 10", "Animation, Fantasy", "Colin Levy"].every((f) => meta.facts.includes(f)) && meta.cast === "Halina Reijn as Sintel",
+  `nfo metadata shown as text: ${JSON.stringify(meta)}`);
+await s.shot(page, "nfo");
+
 // Admin: a kid account limited to the Kids library.
 await page.click("#nav-admin");
 await page.waitForSelector("h1:text('Admin')");

@@ -5,6 +5,7 @@ package transcode
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -92,5 +93,60 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestPausedSessionLifecycle(t *testing.T) {
+	ffmpeg, path := clip(t, "40")
+	for _, action := range []string{"stop", "close", "replace", "idle"} {
+		t.Run(action, func(t *testing.T) {
+			m, err := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc"), MaxTranscodes: 1, Throttle: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			m.setThrottleLimits(4*time.Second, 2*time.Second, time.Millisecond)
+			r := Request{Input: path, Source: clipInfo, MaxWidth: 160, MaxHeight: 90}
+			s, err := m.StartHLS(1, "player", 1, r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, "paused session", s.Throttled)
+			if _, err := m.Segment(context.Background(), s, "99999.ts/invalid"); err != ErrNotFound || s.requested.Load() != 0 {
+				t.Fatal("invalid segment advanced playback")
+			}
+			finished := make(chan error, 1)
+			go func() {
+				switch action {
+				case "stop":
+					m.Stop(1, "player")
+				case "close":
+					m.Close()
+				case "replace":
+					_, err = m.StartHLS(1, "player", 1, r)
+				case "idle":
+					m.SetIdleTimeout(time.Millisecond)
+					<-s.done
+				}
+				finished <- err
+			}()
+			select {
+			case err := <-finished:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("paused lifecycle action blocked")
+			}
+			select {
+			case <-s.done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("paused process survived")
+			}
+			if s.Throttled() {
+				t.Fatal("throttled flag survived cleanup")
+			}
+			waitFor(t, "session directory removal", func() bool { _, err := os.Stat(s.dir); return os.IsNotExist(err) })
+		})
 	}
 }

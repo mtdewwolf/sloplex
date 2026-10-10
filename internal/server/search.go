@@ -56,8 +56,12 @@ func (s *Server) searchItems(r *http.Request, q search.Query, sectionID int, typ
 		if !see(it.SectionID) {
 			continue
 		}
-		if score := q.Score(it.Title, s.searchContext(it), it.Year); score > 0 {
-			hits = append(hits, hit{it, score, library.SortTitle(it.Title)})
+		score := q.Score(it.Title, s.searchContext(it), it.Year)
+		if it.Meta != nil && it.Meta.OriginalTitle != "" {
+			score = max(score, q.Score(it.Meta.OriginalTitle, s.searchContext(it), it.Year))
+		}
+		if score > 0 {
+			hits = append(hits, hit{it, score, it.SortKey()})
 		}
 	}
 	slices.SortFunc(hits, func(a, b hit) int {

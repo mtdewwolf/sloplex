@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ type Scanner struct {
 
 	mu      sync.Mutex
 	running map[int]bool
+	again   map[int]bool // a scan was requested while one was running
 	wg      sync.WaitGroup
 }
 
@@ -38,7 +40,7 @@ func NewScanner(store *Store, prober probe.Prober, log *slog.Logger) *Scanner {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Scanner{store: store, prober: prober, log: log, now: time.Now, running: map[int]bool{}}
+	return &Scanner{store: store, prober: prober, log: log, now: time.Now, running: map[int]bool{}, again: map[int]bool{}}
 }
 
 // Refreshing reports whether the section is being scanned.
@@ -48,14 +50,32 @@ func (sc *Scanner) Refreshing(sectionID int) bool {
 	return sc.running[sectionID]
 }
 
-// Start scans a section in the background. It does nothing if that section
-// is already being scanned.
+// Start scans a section in the background. If that section is already
+// being scanned, it is scanned once more afterwards.
 func (sc *Scanner) Start(ctx context.Context, sectionID int) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if sc.running[sectionID] {
+		sc.again[sectionID] = true
+		return
+	}
+	sc.running[sectionID] = true
 	sc.wg.Add(1)
 	go func() {
 		defer sc.wg.Done()
-		if _, err := sc.Scan(ctx, sectionID); err != nil && !errors.Is(err, ErrScanInProgress) {
-			sc.log.Error("scan failed", "section", sectionID, "err", err)
+		for {
+			if _, err := sc.scan(ctx, sectionID); err != nil {
+				sc.log.Error("scan failed", "section", sectionID, "err", err)
+			}
+			sc.mu.Lock()
+			again := sc.again[sectionID] && ctx.Err() == nil
+			delete(sc.again, sectionID)
+			if !again {
+				delete(sc.running, sectionID)
+				sc.mu.Unlock()
+				return
+			}
+			sc.mu.Unlock()
 		}
 	}()
 }
@@ -78,7 +98,11 @@ func (sc *Scanner) Scan(ctx context.Context, sectionID int) (ScanStats, error) {
 		delete(sc.running, sectionID)
 		sc.mu.Unlock()
 	}()
+	return sc.scan(ctx, sectionID)
+}
 
+// scan does the work of Scan; the caller marks the section running.
+func (sc *Scanner) scan(ctx context.Context, sectionID int) (ScanStats, error) {
 	sec, err := sc.store.Section(sectionID)
 	if err != nil {
 		return ScanStats{}, err
@@ -119,6 +143,7 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 
 	var files []ScannedFile
 	dirs := dirCache{}
+	shows := map[string]*Meta{} // tvshow.nfo by directory
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -150,6 +175,7 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 		}
 		if f, ok := sc.scanFile(ctx, sec, root, path, info); ok {
 			f.Sidecars = findSidecars(dirs, path)
+			f.NFO, f.ShowNFO = sc.nfos(dirs, shows, sec, root, path)
 			files = append(files, f)
 		}
 		return nil
@@ -158,6 +184,41 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 		return nil, fmt.Errorf("section %q: %w", sec.Title, err)
 	}
 	return files, nil
+}
+
+// nfos reads the .nfo metadata of a video and, for episodes, of its show;
+// see docs/spec/metadata.md.
+func (sc *Scanner) nfos(dirs dirCache, shows map[string]*Meta, sec Section, root, path string) (item, show *Meta) {
+	read := func(p, kind string) *Meta {
+		if p == "" {
+			return nil
+		}
+		m, err := ReadNFO(p, kind)
+		if err != nil {
+			sc.log.Debug("ignoring nfo", "path", p, "err", err)
+			return nil
+		}
+		return m
+	}
+	dir, st := filepath.Dir(path), stem(path)
+	switch sec.Type {
+	case TypeMovie:
+		return read(nfoPath(dirs, dir, st+".nfo", "movie.nfo"), NFOMovie), nil
+	case TypeShow:
+		item = read(nfoPath(dirs, dir, st+".nfo"), NFOEpisode)
+		root = filepath.Clean(root)
+		for d := dir; ; d = filepath.Dir(d) {
+			m, ok := shows[d]
+			if !ok {
+				m = read(nfoPath(dirs, d, "tvshow.nfo"), NFOShow)
+				shows[d] = m
+			}
+			if m != nil || d == root || !strings.HasPrefix(d, root) || filepath.Dir(d) == d {
+				return item, m
+			}
+		}
+	}
+	return nil, nil
 }
 
 // scanFile names and probes one video file. ok is false if the file does not
@@ -173,7 +234,7 @@ func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string,
 			sc.log.Debug("skipping file without episode number", "path", path)
 			return ScannedFile{}, false
 		}
-		f.Show, f.ShowYear, f.Season, f.Episode, f.Title = ep.Show, ep.ShowYear, ep.Season, ep.Episode, ep.Title
+		f.Show, f.ShowYear, f.Season, f.Episode, f.Title, f.Aired = ep.Show, ep.ShowYear, ep.Season, ep.Episode, ep.Title, ep.Aired
 	default:
 		return ScannedFile{}, false
 	}

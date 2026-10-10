@@ -11,7 +11,14 @@
   - the parameters `path`, `mediaIndex`, `partIndex`, `offset`,
     `videoResolution`, `maxVideoBitrate`, `directStream`, and `session`;
   - the `TranscodeSession` element, including its `transcodeHwEncoding`,
-    `transcodeHwFullPipeline`, and `throttled` attributes.
+    `transcodeHwFullPipeline`, and `throttled` attributes;
+  - the `decision` endpoint path, its `directPlay` parameter, the
+    `generalDecisionCode`/`Text`, `directPlayDecisionCode`/`Text`, and
+    `transcodeDecisionCode`/`Text` attributes, and the `decision` attribute
+    on `Part` (`directplay`, `copy`, `transcode`) and `Stream` (`copy`,
+    `transcode`, `burn`).
+- The VP9 and Opus encoder options (`libvpx-vp9 -deadline realtime
+  -cpu-used -row-mt`, `libopus`) come from ffmpeg's public documentation.
 - The libx264 preset names come from x264's and ffmpeg's public
   documentation.
 - The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
@@ -19,20 +26,23 @@
   and the `h264_*` encoders and their rate-control options) come from
   ffmpeg's own public documentation.
 - These are **(sloplex)**:
-  - the progressive `start.mp4` endpoint;
+  - the progressive `start.mp4` and `start.webm` endpoints;
   - capability session URLs;
   - the decision rules, limits, idle timeout, and ffmpeg arguments;
+  - the client capability parameters of the `decision` endpoint, and its
+    decision codes and texts;
   - the CPU benchmark, load model, preset choice, and throttle limits.
 
 ## Model
 
 A **transcode** converts one media part into something every client can
-play: H.264 video and AAC stereo audio. It is delivered one of two ways:
+play: H.264 video and AAC stereo audio. It is delivered one of three ways:
 
 | Protocol | Endpoint     | Output                                                        |
 |----------|--------------|---------------------------------------------------------------|
 | HLS      | `start.m3u8` | MPEG-TS segments of about 4 s plus playlists, written to `<dataDir>/transcode/<session>/` |
 | HTTP     | `start.mp4`  | Fragmented MP4 streamed in the response body; nothing is written to disk |
+| HTTP     | `start.webm` | **(sloplex)** VP9 video and Opus audio in WebM, streamed like `start.mp4`; see **WebM** |
 
 - Transcoding needs `ffmpeg`, configured as in [artwork.md](artwork.md).
   Without it, the start endpoints return `503`.
@@ -82,6 +92,28 @@ are never muxed into the output, but they can be burned in. See
 of the source. Output timestamps start at 0, so clients add `offset` back
 when reporting progress.
 
+## WebM (sloplex)
+
+`start.webm` is for browsers that cannot decode H.264, such as Chromium
+builds without proprietary codecs. It follows the decisions above, with
+these changes:
+
+- **Video is copied** when the source codec is `vp9` (instead of `h264`) and
+  the other copy conditions hold. Otherwise it is encoded with
+  `libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -crf 32
+  -pix_fmt yuv420p`, with `-b:v 0`, or with `-b:v`, `-maxrate`, and
+  `-bufsize` (2×) set from `maxVideoBitrate`.
+- VP9 is always encoded in software, so only the software pipeline is used.
+  Software VP9 is much slower than H.264, so clients should set
+  `videoResolution`; the web app asks for `1280x720`.
+- **Audio is copied** when the source is Opus with at most 2 channels.
+  Otherwise it is encoded to Opus stereo at 128 kbps.
+- The source's per-stream `DURATION` tags are not copied. Matroska sources
+  carry them for the whole file, and browsers would take them as the
+  length of a stream that starts at `offset`.
+- The output has no duration and no cues, and the response cannot be
+  seeked.
+
 ## HDR tone mapping (sloplex)
 
 A video stream is **HDR** when ffprobe reports its transfer as one of:
@@ -104,9 +136,8 @@ zscale=t=bt709:m=bt709:r=tv,format=yuv420p
 
 - The first `zscale` runs only when the output is smaller than the source.
   It resizes to the planned output size `W`×`H`, so the expensive
-  floating-point stages work on output pixels. For 4K to 1080p this
-  needs about 2.5 times less CPU, and for 4K to 720p about 3.7 times
-  less.
+  floating-point stages work on output pixels. This reduces the number of pixels processed by those stages;
+  actual savings depend on the machine and input (see **Measurements**).
 - When it runs, an image subtitle being burned in is scaled to `W`×`H` too
   (`[0:<index>]scale=W:H`) before the overlay, so it lands where it would
   have at the source size.
@@ -185,8 +216,9 @@ Returns JSON:
 - `available` is false when ffmpeg is missing.
 - `x264Preset` is the configured value. `throttle` is true when throttling
   is on and the OS supports it.
-- `softwareLoad` is the estimated share of the machine that the running
-  software encodes need to keep up with playback. See **Load model**.
+- `softwareLoad` is the estimated CPU share for active software encodes
+  and encode-only hardware decoding/filtering, including conservative VP9
+  reservations. See **Load model**.
 - `benchmark` gives frames per second at 720p for each preset that auto
   mode uses. It is absent until the benchmark finishes, and absent when
   `x264Preset` is not `auto`.
@@ -208,7 +240,8 @@ playing:
 | `x264Preset`        | `auto`, `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` | `auto`  |
 | `transcodeThrottle` | `true`, `false`                                                      | `true`  |
 
-A named preset is used for every software encode. With `auto`, each
+A named preset is used for every software H.264 encode. WebM retains its
+fixed VP9 realtime settings and has no x264 preset. With `auto`, each
 transcode gets its own preset, as described below.
 
 ### Benchmark
@@ -254,10 +287,18 @@ The weights express the cost of decoding and filtering relative to
 libx264 `veryfast` encoding the same number of pixels. They were measured
 with ffmpeg 6.1 on x86-64. Copied video has a load of 0.
 
+VP9 output is not calibrated by the x264 benchmark. Each active WebM
+video encode conservatively reserves 0.75 of the planning budget,
+independent of the configured x264 preset; this is a scheduling reservation,
+not a measured CPU-utilization estimate. WebM video copies reserve zero.
+When the asynchronous benchmark completes, existing H.264 encode estimates
+are refreshed at their unchanged presets before scheduling later encodes.
+
 ### Choosing a preset (auto)
 
 - The **running load** is the sum of the loads of transcodes that are
-  running now on the software pipeline. A hardware pipeline adds no load.
+  running now on the software pipeline, plus CPU decoding/filtering for
+  encode-only hardware pipelines. A full hardware pipeline adds no load.
 - Each new transcode gets the first preset of `faster`, `veryfast`,
   `superfast`, `ultrafast` for which running load plus its own load is at
   most **0.75**. If none fits, it gets `ultrafast`.
@@ -274,7 +315,8 @@ HLS transcodes run at full speed until they are well ahead of the player.
 - The server tracks the highest segment number each session has been
   asked for.
 - **Pause:** the transcode is paused when the playlist lists more than
-  90 s (22.5 segments) beyond that segment. ffmpeg gets `SIGSTOP`.
+  90 s beyond that segment, summing playlist `EXTINF` durations rather
+  than assuming copied-video keyframes produce four-second segments. ffmpeg gets `SIGSTOP`.
 - **Resume:** it continues (`SIGCONT`) when the lead falls to 45 s or
   less.
 - The lead is checked every second, and at once on each segment request.
@@ -285,12 +327,13 @@ HLS transcodes run at full speed until they are well ahead of the player.
   `/transcode/sessions`.
 - Throttling needs a Unix-like OS. Elsewhere, and when `transcodeThrottle`
   is `false`, HLS transcodes run at full speed to the end.
-- Progressive MP4 streams are not throttled here. They slow down by
+- Progressive MP4 and WebM streams are not throttled here. They slow down by
   themselves when the client stops reading.
 
 ### Measurements
 
-These measurements were taken on a 4-core x86-64 VM with AVX-512, using
+Historical measurements reported by the original CPU-acceleration change
+were taken on a 4-core x86-64 VM with AVX-512, using
 ffmpeg 6.1 and a 12 s HEVC 10-bit 4K PQ clip transcoded to 1080p over HLS.
 
 | | First segment | All 12 s |
@@ -298,7 +341,23 @@ ffmpeg 6.1 and a 12 s HEVC 10-bit 4K PQ clip transcoded to 1080p over HLS.
 | Before (tone map at 4K, `veryfast`) | 17.5 s | 38.4 s |
 | After (tone map at 1080p, auto chose `ultrafast`) | 6.3 s | 14.2 s |
 
-Two alternatives were measured and **not** adopted:
+The table changes both filter order and encoder preset, so it does not
+isolate either optimization.
+
+A reproducible synthetic filter-order comparison is available with
+`python3 test/bench/tonemap.py`. It uses a generated 48-frame, 3840×2160
+10-bit PQ-tagged test pattern, 1920×1080 output, the same `veryfast` preset,
+four encoder threads, and one filter thread for both pipelines. Three
+alternating-order runs on the integration environment (ffmpeg 7.1.5,
+9 visible CPUs) gave median wall times of **5.586 s before** and
+**1.673 s after**: **3.34× faster** for this synthetic workload. This is
+not a real-media playback or HEVC-decoding benchmark and does not establish
+visual equivalence or a universal speedup. The benchmark checks successful
+encoding to a null sink; separate `TestToneMapping` regressions inspect
+encoded PQ/HLG outputs for BT.709 tags, output width, and expected diffuse
+white/highlight luminance, while PGS tests check subtitle size and timing.
+
+Two alternatives were historically measured and **not** adopted:
 
 - **Encoding time-chunks in parallel ffmpeg processes:** no faster on
   4 cores. One ffmpeg already keeps about 3 of 4 cores busy. Every chunk
@@ -371,6 +430,81 @@ Streams fragmented MP4 (`video/mp4`) for as long as the client reads. It
 accepts the same parameters as `start.m3u8` except `session`, and the
 response cannot be seeked. Closing the connection stops the transcode.
 
+### `GET /video/:/transcode/universal/start.webm` (sloplex)
+
+The same as `start.mp4`, but it streams WebM (`video/webm`) as described in
+**WebM**.
+
+### `GET /video/:/transcode/universal/decision`
+
+Tells a client, before it starts playback, whether it can play a part as it
+is, or what a conversion would do. Nothing is started.
+
+It takes the same parameters as `start.m3u8` (media, `offset`,
+`videoResolution`, `maxVideoBitrate`, `directStream`, and the stream
+parameters in [streams.md](streams.md)), plus:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `protocol` | `hls` | The conversion the client would use: `hls`, `http` (`start.mp4`), or `webm` (`start.webm`) |
+| `directPlay` | `1` | `0` rules out direct play |
+| `containers` | `mp4` | **(sloplex)** Containers the client plays directly, comma-separated, as in `Part.container` (`mkv`, `mp4`, `webm`, `mpegts`, `avi`, `mov`, …) |
+| `videoCodecs` | `h264` | **(sloplex)** Video codecs the client decodes, as ffprobe names them (`h264`, `hevc`, `vp9`, `av1`, …) |
+| `audioCodecs` | `aac,mp3` | **(sloplex)** Audio codecs the client decodes (`aac`, `ac3`, `eac3`, `opus`, `flac`, …) |
+| `maxAudioChannels` | `2` | **(sloplex)** The most audio channels the client plays |
+| `hdr` | `0` | **(sloplex)** `1` if the client displays HDR |
+
+Lists are matched without regard to case.
+
+**Direct play** is possible when all of these hold:
+
+- `directPlay` is not `0`;
+- the part's container is in `containers`;
+- the video codec is in `videoCodecs`;
+- the selected audio stream's codec is in `audioCodecs`, with at most
+  `maxAudioChannels` channels (a part without audio passes);
+- the video fits `videoResolution` and `maxVideoBitrate`, when given;
+- the video is not HDR, or `hdr=1`;
+- nothing must be burned in. An image subtitle that is selected, or any
+  selected subtitle with `subtitles=burn`, rules out direct play. Text
+  subtitles do not, because the client fetches them from
+  `/library/streams/{id}`.
+
+**Conversion** follows the decisions above for the chosen `protocol`. It is
+possible when ffmpeg is available and the client decodes its output: the
+output video codec (`h264`, or `vp9` for `webm`) is in `videoCodecs` and
+the output audio codec (`aac`, or `opus` for `webm`) is in `audioCodecs`.
+Copied streams count as their own codec.
+
+The response is a `MediaContainer` with one item, rendered as in lists. Its
+first `Media` has `selected="1"` and describes what the client would get:
+
+- **Direct play:** the stored `Media` and `Part`. The `Part` has
+  `decision="directplay"`.
+- **Conversion:**
+  - `Media` has `protocol` (`hls`, `http`, or `webm`), `container`
+    (`mpegts`, `mp4`, or `webm`), the output `videoCodec` and `audioCodec`,
+    `width`, `height`, and `bitrate` in kbps.
+  - `Part` has `decision="copy"` when the video is copied, otherwise
+    `decision="transcode"`.
+  - The `Part` holds the video `Stream` and the selected audio `Stream`,
+    each with `decision` `copy` or `transcode`. A subtitle that would be
+    burned in is included too, with `decision="burn"`.
+
+**(sloplex)** The container attributes:
+
+| Attribute | Values |
+|---|---|
+| `generalDecisionCode`, `generalDecisionText` | `1000` `Direct play OK.`; `1001` `Direct play not available; Conversion OK.`; `2000` `Neither direct play nor conversion is available.` |
+| `directPlayDecisionCode`, `directPlayDecisionText` | `1000` `Direct play OK.`; `3000` `Direct play not available: ` followed by every reason, separated by `; `, for example `the container mkv is not supported; the audio codec ac3 is not supported` |
+| `transcodeDecisionCode`, `transcodeDecisionText` | Only when direct play is not possible. `1001` `Conversion OK.`; `4000` `Conversion not available: ` and a reason, such as `ffmpeg is not installed` or `the client does not decode h264` |
+
+With code `2000`, the item has no `Media`.
+
+Errors are as for `start.m3u8`: `400` for bad parameters, `404` for unknown
+or hidden media. A bad `protocol`, `directPlay`, `maxAudioChannels`, or `hdr`
+value is also `400`.
+
 ### `GET|PUT /video/:/transcode/universal/stop`
 
 Stops the caller's HLS sessions that carry `session=<label>`, deletes their
@@ -420,4 +554,11 @@ transcode:
 - Splitting decoding and encoding into separate processes. With ffmpeg 6.x,
   this gained 5–15% by overlapping work that the ffmpeg 6 CLI runs on one
   thread.
-- The `decision` endpoint.
+
+### Test-environment limitation
+
+The synthetic HDR/PGS timing fixture disables HEVC B-frames: ffmpeg 7.1.5
+can deliver subtitle heartbeat frames out of order for that very short
+B-frame fixture, even with plain unscaled overlay. The test verifies
+subtitle position, scaled size, and appearance/disappearance with ordered
+input; this does not claim to fix ffmpeg's B-frame subtitle timing issue.

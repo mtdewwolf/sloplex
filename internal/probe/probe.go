@@ -244,7 +244,7 @@ func parseRate(v string) float64 {
 	if ok {
 		d, err2 = strconv.ParseFloat(den, 64)
 	}
-	if err1 != nil || err2 != nil || d <= 0 || n <= 0 || n/d > 1000 {
+	if err1 != nil || err2 != nil || math.IsNaN(n) || math.IsInf(n, 0) || math.IsNaN(d) || math.IsInf(d, 0) || d <= 0 || n <= 0 || n/d > 1000 {
 		return 0
 	}
 	return math.Round(n/d*1000) / 1000

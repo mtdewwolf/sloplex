@@ -85,8 +85,9 @@ func TestToneMapping(t *testing.T) {
 		maxW int
 	}{
 		{"HDR10", "smpte2084", probe.HDRPQ, 509, 723, 145, 215, 0}, // ~100 and ~1000 nits
-		{"HLG", "arib-std-b67", probe.HDRHLG, 500, 800, 100, 200, 0},
+		{"HLG", "arib-std-b67", probe.HDRHLG, 500, 880, 100, 200, 0},
 		{"HDR10-downscaled", "smpte2084", probe.HDRPQ, 509, 723, 145, 215, 320},
+		{"HLG-downscaled", "arib-std-b67", probe.HDRHLG, 500, 880, 100, 200, 320},
 	} {
 		src := filepath.Join(dir, tc.name+".mkv")
 		testutil.WriteHDRClip(t, ffmpeg, src, tc.transfer, tc.left, tc.right)
@@ -113,6 +114,7 @@ func TestToneMapping(t *testing.T) {
 		}
 		mid := testutil.AverageLuma(t, ffmpeg, out, "0.5", midCrop)
 		high := testutil.AverageLuma(t, ffmpeg, out, "0.5", highCrop)
+		t.Logf("%s: diffuse luma %d, highlight luma %d", tc.name, mid, high)
 		if mid < tc.midMin || mid > tc.midMax || high < 230 || high <= mid {
 			t.Errorf("%s: luma %d (diffuse) and %d (highlight); want %d-%d and >= 230", tc.name, mid, high, tc.midMin, tc.midMax)
 		}

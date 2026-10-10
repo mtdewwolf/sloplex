@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Library describes one library section to serve.
@@ -40,6 +41,11 @@ type Config struct {
 	// or videotoolbox. HwaccelDevice is the DRM node for vaapi and qsv.
 	Hwaccel       string `json:"hwaccel"`
 	HwaccelDevice string `json:"hwaccelDevice"`
+	// Watch scans libraries when their folders change.
+	Watch bool `json:"watch"`
+	// ScanInterval is a Go duration ("1h", "30m") between full scans of
+	// every library; "0" turns them off.
+	ScanInterval string `json:"scanInterval"`
 	// X264Preset is the libx264 preset for software transcoding, or "auto"
 	// to pick one per transcode from a startup benchmark and current load.
 	X264Preset string `json:"x264Preset"`
@@ -68,6 +74,8 @@ func Default() Config {
 		HwaccelDevice:     "/dev/dri/renderD128",
 		X264Preset:        "auto",
 		TranscodeThrottle: true,
+		Watch:             true,
+		ScanInterval:      "1h",
 	}
 }
 
@@ -112,6 +120,9 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("hwaccel %q: want none, auto, vaapi, qsv, nvenc or videotoolbox", c.Hwaccel)
 	}
+	if _, err := c.ScanEvery(); err != nil {
+		return err
+	}
 	switch c.X264Preset {
 	case "auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium":
 	default:
@@ -135,6 +146,18 @@ func (c Config) Validate() error {
 		seen[key] = true
 	}
 	return nil
+}
+
+// ScanEvery parses ScanInterval; 0 means no interval scans.
+func (c Config) ScanEvery() (time.Duration, error) {
+	if c.ScanInterval == "" || c.ScanInterval == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(c.ScanInterval)
+	if err != nil || d < time.Minute {
+		return 0, fmt.Errorf("scanInterval %q: want a duration of at least 1m, such as \"1h\", or \"0\"", c.ScanInterval)
+	}
+	return d, nil
 }
 
 // Port returns the TCP port from Listen.

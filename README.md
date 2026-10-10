@@ -18,11 +18,12 @@ Sloplex is a standalone product:
 | Area                               | State                                    |
 |------------------------------------|------------------------------------------|
 | Server root, `/identity`           | ✅                                       |
-| GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`                    |
+| GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`; announces `HELLO`/`BYE` on start and stop |
 | Local token auth, trusted CIDRs    | ✅                                       |
 | Multiple users                     | ✅ accounts, passwords, per-device tokens, per-user watch history |
 | Per-user library restrictions      | ✅ e.g. a kids account that sees only the kids library |
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
+| Automatic library updates          | ✅ folder watching (Linux inotify), hourly backup scan |
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
 | Search                             | ✅ `/hubs/search`, `/search`, per-section; accent-insensitive, prefix matching |
@@ -30,10 +31,10 @@ Sloplex is a standalone product:
 | Direct play (byte-range streaming) | ✅                                       |
 | Watched/resume state, On Deck      | ✅ scrobble, timeline, unwatched filter  |
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
-| Date-based TV episodes             | ⏳                                       |
+| Date-based TV episodes             | ✅ `Show - 2024-03-15.mkv`, seasons by year |
 | Music                              | ⏳                                       |
-| External metadata agents           | ⏳                                       |
-| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
+| Local metadata (`.nfo`)            | ✅ summaries, ratings, genres, cast, sort titles; read from files, never fetched online |
+| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
 | CPU-only transcoding               | ✅ tone mapping at output size, benchmark-driven adaptive x264 preset, HLS throttling |
@@ -73,7 +74,9 @@ Admins also get an Admin page for managing accounts, library access, device
 tokens, and library refreshes.
 
 Files the browser can decode play directly. Anything else is converted on
-the fly to H.264/AAC, which needs ffmpeg.
+the fly, which needs ffmpeg. The conversion is H.264/AAC, or VP9/Opus WebM
+for browsers without H.264. While converting, the player's seek bar still
+covers the whole file: seeking restarts the conversion at the new point.
 
 ### Users
 
@@ -109,7 +112,22 @@ The full API is in [docs/spec/accounts.md](docs/spec/accounts.md).
 
 ### Libraries
 
+New, changed, and deleted files are picked up on their own:
+
+- On Linux, Sloplex watches the library folders and rescans a library about
+  5 seconds after changes stop.
+- Every library is also rescanned every hour (`scanInterval`). This catches
+  changes that watching can't see, such as files changed by another machine
+  on a network share, and covers macOS and Windows, where watching isn't
+  available.
+
+A very large library can exceed Linux's default watch limit; Sloplex logs a
+warning if it does. Raise it with
+`sysctl fs.inotify.max_user_watches=524288`.
+
 TV libraries expect `<root>/<Show Name (Year)>/Season NN/<file with S01E02>`.
+Daily shows can use the air date instead, as in
+`The Daily Show - 2024-03-15 - Guest.mkv`; they get one season per year.
 See "Show sections" in [docs/spec/http-api.md](docs/spec/http-api.md) for the
 full naming rules.
 
@@ -130,18 +148,28 @@ When transcoding:
 
 See [docs/spec/streams.md](docs/spec/streams.md).
 
+Summaries, ratings, genres, cast, and better titles come from Kodi-style
+`.nfo` files next to your media: `<video name>.nfo` or `movie.nfo` for a
+movie, `tvshow.nfo` in a show's folder, and `<episode name>.nfo` for an
+episode. Tools such as tinyMediaManager can write them for you. Sloplex
+never looks anything up online. See
+[docs/spec/metadata.md](docs/spec/metadata.md).
+
 Artwork comes from image files next to your media, such as `poster.jpg`,
 `fanart.jpg`, `banner.jpg`, `season01-poster.jpg`, and `<episode>-thumb.jpg`.
 See [docs/spec/artwork.md](docs/spec/artwork.md) for the names that are
 recognised.
 
-Install ffmpeg (which includes `ffprobe`) to get two extras:
+Install ffmpeg (which includes `ffprobe`) to get these extras:
 
 - duration, codec, and resolution details. Without `ffprobe`, Sloplex
   reports only the container.
 - generated thumbnails for episodes that have no image;
-- transcoding for clients that can't play a file as it is. Clients use
-  `/video/:/transcode/universal/start.m3u8` (HLS) or `start.mp4`; see
+- transcoding for clients that can't play a file as it is. Clients can ask
+  `/video/:/transcode/universal/decision` first, describing what they play,
+  to learn whether a file plays directly, needs only a remux, or needs
+  converting. They then use `start.m3u8` (HLS), `start.mp4`, or
+  `start.webm`; see
   [docs/spec/transcode.md](docs/spec/transcode.md).
 
 ### Hardware transcoding
@@ -178,13 +206,13 @@ Set `"hwaccel": "none"` to always use software.
 Without a GPU, Sloplex does three things to keep playback smooth:
 
 - **HDR tone mapping at the output size.** When downscaling, the picture
-  is resized before the expensive tone-mapping math. 4K HDR to 1080p needs
-  about 2.5 times less CPU, and 4K to 720p about 3.7 times less.
+  is resized before the expensive tone-mapping math. Savings depend on
+  the source, output size, and machine.
 - **Adaptive x264 preset.** With `"x264Preset": "auto"` (the default),
   Sloplex measures libx264 at startup. Each transcode then gets the
-  best-quality preset that still keeps up with real time, given everything
-  else that is transcoding.
-  - An idle server uses `faster`.
+  best-quality preset predicted to fit the CPU budget, given everything
+  else that is transcoding. This is an estimate, not a playback guarantee.
+  - An idle server uses `faster` when the estimated load fits.
   - A busy server, or a heavy source such as 4K HEVC HDR, moves down
     through `veryfast` and `superfast` to `ultrafast`.
   - Set a preset name to use that preset always.
@@ -192,9 +220,11 @@ Without a GPU, Sloplex does three things to keep playback smooth:
   player is paused until the lead falls to 45 s. This leaves the CPU free
   for other streams.
 
-On a 4-core machine, a 4K HDR to 1080p stream now starts in 6 s instead of
-17 s, and transcodes 2.7 times faster. See "CPU transcoding" in
-[docs/spec/transcode.md](docs/spec/transcode.md).
+A preset-matched synthetic 4K-to-1080p benchmark on the integration
+machine took 5.586 s before output-size tone mapping and 1.673 s after
+(3.34× faster). This does not include HEVC decoding or establish real-media
+playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
+"CPU transcoding" in [docs/spec/transcode.md](docs/spec/transcode.md).
 
 ## Configuration
 
@@ -211,6 +241,8 @@ On a 4-core machine, a 4K HDR to 1080p stream now starts in 6 s instead of
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
 | `hwaccel`         | `"auto"`       | `auto`, `none`, `vaapi`, `qsv`, `nvenc`, or `videotoolbox` |
 | `hwaccelDevice`   | `/dev/dri/renderD128` | GPU render node for `vaapi` and `qsv`              |
+| `watch`           | `true`         | Rescan a library when its folders change (Linux)          |
+| `scanInterval`    | `"1h"`         | Rescan every library this often (at least `1m`); `"0"` turns it off |
 | `x264Preset`      | `"auto"`       | `auto`, or one of `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` |
 | `transcodeThrottle` | `true`       | Pause HLS transcodes that are far ahead of the player     |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
@@ -222,7 +254,8 @@ cmd/sloplex/        entrypoint
 internal/config/    config file loading and validation
 internal/identity/  machine identifier and owner master token
 internal/accounts/  user accounts, password hashes, issued tokens
-internal/library/   section/item store, filename parsing, scanner
+internal/library/   section/item store, filename parsing, scanner, automatic scans
+internal/fswatch/   folder watching (inotify)
 internal/playstate/ per-account watched/resume state
 internal/probe/     ffprobe wrapper
 internal/artwork/   frame grabs and cached image resizing

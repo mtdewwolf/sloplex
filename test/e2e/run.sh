@@ -45,6 +45,12 @@ if [ ! -f "$media/.done" ]; then
   ff -f lavfi -i "testsrc=size=640x360:duration=4:rate=10" -c:v libvpx-vp9 "$kids/Bluey (2018)/Season 01/Bluey - S01E01 - Magic Xylophone.webm"
   touch "$media/.done"
 fi
+# Local metadata, written every run so edits here apply to cached media.
+cat > "$media/movies/Sintel (2010)/Sintel (2010).nfo" <<'NFO'
+<movie><title>Sintel</title><tagline>A girl and her dragon</tagline><mpaa>PG</mpaa><rating>7.5</rating>
+<plot>&lt;b&gt;Open&lt;/b&gt; movie by the Blender Institute.</plot><genre>Animation</genre><genre>Fantasy</genre>
+<director>Colin Levy</director><actor><name>Halina Reijn</name><role>Sintel</role></actor></movie>
+NFO
 leaves=7 # movies and episodes above
 
 suites=("$@")

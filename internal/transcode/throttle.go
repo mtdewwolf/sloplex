@@ -1,9 +1,13 @@
 package transcode
 
 import (
+	"bufio"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,8 +24,33 @@ const (
 // ahead is how much media the session has produced beyond the newest
 // segment requested.
 func (s *Session) ahead() time.Duration {
-	segs, _ := listedSegments(filepath.Join(s.dir, "index.m3u8"))
-	return time.Duration(len(segs)-1-int(s.requested.Load())) * segmentSeconds * time.Second
+	f, err := os.Open(filepath.Join(s.dir, "index.m3u8"))
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	requested := s.requested.Load()
+	var lead float64
+	var duration float64
+	var index int64
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if strings.HasPrefix(line, "#EXTINF:") {
+			value, _, _ := strings.Cut(strings.TrimPrefix(line, "#EXTINF:"), ",")
+			duration, _ = strconv.ParseFloat(value, 64)
+			if duration <= 0 || math.IsNaN(duration) || math.IsInf(duration, 0) {
+				duration = segmentSeconds
+			}
+		} else if line != "" && !strings.HasPrefix(line, "#") {
+			if index > requested {
+				lead += duration
+			}
+			index++
+			duration = segmentSeconds
+		}
+	}
+	return time.Duration(lead * float64(time.Second))
 }
 
 // requestSegment records that a player asked for segment n and wakes the

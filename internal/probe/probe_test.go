@@ -2,6 +2,8 @@ package probe
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -97,10 +99,31 @@ func TestParseFFprobeStreamDetails(t *testing.T) {
 
 func TestParseRate(t *testing.T) {
 	for in, want := range map[string]float64{
+		"NaN": 0, "NaN/1": 0, "24/NaN": 0, "+Inf": 0, "+Inf/+Inf": 0, "24/+Inf": 0, "-Inf": 0, "1e308/1e-308": 0,
 		"24000/1001": 23.976, "25/1": 25, "30": 30, "0/0": 0, "": 0, "1/0": 0, "x/1": 0, "90000/1": 0,
 	} {
 		if got := parseRate(in); got != want {
 			t.Errorf("parseRate(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestProbeFrameRateFallbackIsFinite(t *testing.T) {
+	for _, tc := range []struct {
+		avg, fallback string
+		want          float64
+	}{
+		{"NaN", "24000/1001", 23.976}, {"25", "NaN", 25}, {"NaN", "+Inf", 0},
+	} {
+		info, err := parseFFprobe([]byte(fmt.Sprintf(`{"format":{},"streams":[{"codec_type":"video","codec_name":"h264","avg_frame_rate":%q,"r_frame_rate":%q}]}`, tc.avg, tc.fallback)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.FrameRate != tc.want {
+			t.Errorf("frame rate %v, want %v", info.FrameRate, tc.want)
+		}
+		if _, err := json.Marshal(info); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

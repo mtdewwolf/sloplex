@@ -86,8 +86,14 @@ func TestBurnPGSOnDownscaledHDR(t *testing.T) {
 	sup := filepath.Join(dir, "subs.sup")
 	testutil.WriteSUP(t, sup, 640, 360, 220, 260, 200, 60, 500, 1500)
 	video := filepath.Join(dir, "uhd.mkv")
+	// Keep the fixture's video packets in presentation order. On ffmpeg 7,
+	// a short HEVC clip with B-frames can advance the subtitle-to-video
+	// heartbeat past the clear packet before decoding it, even with a plain
+	// unscaled overlay. This test checks canvas scaling, not that upstream
+	// subtitle timing limitation.
 	if out, err := exec.Command(ffmpeg, "-v", "error", "-i", hdr, "-i", sup,
-		"-map", "0", "-map", "1", "-c", "copy", "-copyts", video).CombinedOutput(); err != nil {
+		"-map", "0", "-map", "1", "-c:v", "libx265", "-x265-params", "bframes=0:log-level=error",
+		"-c:s", "copy", "-copyts", video).CombinedOutput(); err != nil {
 		t.Fatalf("muxing the PGS track failed: %v %s", err, out)
 	}
 	m, err := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(dir, "tc"), MaxTranscodes: 1})
@@ -106,6 +112,9 @@ func TestBurnPGSOnDownscaledHDR(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The 200×60 box at (220, 260) becomes 100×30 at (110, 130).
+	if n := testutil.BrightPixels(t, ffmpeg, out, "0.2"); n != 0 {
+		t.Errorf("PGS box visible before it starts: %d bright pixels", n)
+	}
 	if n := testutil.BrightPixels(t, ffmpeg, out, "1.0"); n < 100*30/2 || n > 100*30*2 {
 		t.Errorf("PGS box at 1s: %d bright pixels, want about %d", n, 100*30)
 	}

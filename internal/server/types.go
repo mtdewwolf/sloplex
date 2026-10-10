@@ -36,6 +36,14 @@ type MediaContainer struct {
 	Hub      []Hub         `xml:"Hub" json:"Hub,omitempty"`
 
 	TranscodeSession []TranscodeSession `xml:"TranscodeSession" json:"TranscodeSession,omitempty"`
+
+	// Playback decision; see the decision endpoint in docs/spec/transcode.md.
+	GeneralDecisionCode    int    `xml:"generalDecisionCode,attr,omitempty" json:"generalDecisionCode,omitempty"`
+	GeneralDecisionText    string `xml:"generalDecisionText,attr,omitempty" json:"generalDecisionText,omitempty"`
+	DirectPlayDecisionCode int    `xml:"directPlayDecisionCode,attr,omitempty" json:"directPlayDecisionCode,omitempty"`
+	DirectPlayDecisionText string `xml:"directPlayDecisionText,attr,omitempty" json:"directPlayDecisionText,omitempty"`
+	TranscodeDecisionCode  int    `xml:"transcodeDecisionCode,attr,omitempty" json:"transcodeDecisionCode,omitempty"`
+	TranscodeDecisionText  string `xml:"transcodeDecisionText,attr,omitempty" json:"transcodeDecisionText,omitempty"`
 }
 
 // TranscodeSession describes a running transcode; see
@@ -122,8 +130,18 @@ type Metadata struct {
 	Index       *int  `xml:"index,attr,omitempty" json:"index,omitempty"`
 	ParentIndex *int  `xml:"parentIndex,attr,omitempty" json:"parentIndex,omitempty"`
 	Duration    int64 `xml:"duration,attr,omitempty" json:"duration,omitempty"`
-	ChildCount  int   `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
-	LeafCount   int   `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
+	// OriginallyAvailableAt is an air or release date, YYYY-MM-DD.
+	OriginallyAvailableAt string `xml:"originallyAvailableAt,attr,omitempty" json:"originallyAvailableAt,omitempty"`
+
+	// Local .nfo metadata; see docs/spec/metadata.md.
+	OriginalTitle string  `xml:"originalTitle,attr,omitempty" json:"originalTitle,omitempty"`
+	Summary       string  `xml:"summary,attr,omitempty" json:"summary,omitempty"`
+	Tagline       string  `xml:"tagline,attr,omitempty" json:"tagline,omitempty"`
+	ContentRating string  `xml:"contentRating,attr,omitempty" json:"contentRating,omitempty"`
+	Rating        float64 `xml:"rating,attr,omitempty" json:"rating,omitempty"`
+	Studio        string  `xml:"studio,attr,omitempty" json:"studio,omitempty"`
+	ChildCount    int     `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
+	LeafCount     int     `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
 
 	// Artwork; see docs/spec/artwork.md.
 	Thumb            string `xml:"thumb,attr,omitempty" json:"thumb,omitempty"`
@@ -152,6 +170,28 @@ type Metadata struct {
 	LibrarySectionKey   string  `xml:"librarySectionKey,attr" json:"librarySectionKey"`
 	LibrarySectionTitle string  `xml:"librarySectionTitle,attr" json:"librarySectionTitle"`
 	Media               []Media `xml:"Media" json:"Media,omitempty"`
+
+	Genre      []Tag `xml:"Genre" json:"Genre,omitempty"`
+	Director   []Tag `xml:"Director" json:"Director,omitempty"`
+	Writer     []Tag `xml:"Writer" json:"Writer,omitempty"`
+	Country    []Tag `xml:"Country" json:"Country,omitempty"`
+	Role       []Tag `xml:"Role" json:"Role,omitempty"`
+	Collection []Tag `xml:"Collection" json:"Collection,omitempty"`
+}
+
+// Tag is a genre, person, country or collection attached to an item; Role
+// is set for cast members.
+type Tag struct {
+	Tag  string `xml:"tag,attr" json:"tag"`
+	Role string `xml:"role,attr,omitempty" json:"role,omitempty"`
+}
+
+func tags(vals []string) []Tag {
+	var out []Tag
+	for _, v := range vals {
+		out = append(out, Tag{Tag: v})
+	}
+	return out
 }
 
 // xmlName returns the XML element name for an item type.
@@ -175,7 +215,10 @@ type Media struct {
 	VideoCodec      string `xml:"videoCodec,attr,omitempty" json:"videoCodec,omitempty"`
 	VideoResolution string `xml:"videoResolution,attr,omitempty" json:"videoResolution,omitempty"`
 	Container       string `xml:"container,attr,omitempty" json:"container,omitempty"`
-	Part            []Part `xml:"Part" json:"Part"`
+	// Selected and Protocol are set by the decision endpoint.
+	Selected Bool   `xml:"selected,attr,omitempty" json:"selected,omitempty"`
+	Protocol string `xml:"protocol,attr,omitempty" json:"protocol,omitempty"`
+	Part     []Part `xml:"Part" json:"Part"`
 }
 
 // Part is one file of a Media.
@@ -186,6 +229,8 @@ type Part struct {
 	File      string `xml:"file,attr" json:"file"`
 	Size      int64  `xml:"size,attr" json:"size"`
 	Container string `xml:"container,attr,omitempty" json:"container,omitempty"`
+	// Decision is set by the decision endpoint.
+	Decision string `xml:"decision,attr,omitempty" json:"decision,omitempty"`
 	// Stream is only included in item detail; see docs/spec/streams.md.
 	Stream []StreamElem `xml:"Stream" json:"Stream,omitempty"`
 }
@@ -210,6 +255,8 @@ type StreamElem struct {
 	HearingImpaired      Bool   `xml:"hearingImpaired,attr,omitempty" json:"hearingImpaired,omitempty"`
 	Selected             Bool   `xml:"selected,attr,omitempty" json:"selected,omitempty"`
 	Key                  string `xml:"key,attr,omitempty" json:"key,omitempty"`
+	// Decision is set by the decision endpoint.
+	Decision string `xml:"decision,attr,omitempty" json:"decision,omitempty"`
 }
 
 func wantsJSON(r *http.Request) bool {

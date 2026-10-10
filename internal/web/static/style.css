@@ -121,6 +121,20 @@ form.stack label { display: grid; gap: 4px; color: var(--muted); font-size: 13px
 .detail dt { color: var(--muted); }
 .detail dd { margin: 0; overflow-wrap: anywhere; }
 video { width: 100%; max-height: 70vh; background: #000; border-radius: 8px; margin-top: 12px; }
+.player { position: relative; outline: none; }
+.player.converted video { cursor: pointer; }
+.player:fullscreen { display: flex; flex-direction: column; justify-content: center; background: #000; }
+.player:fullscreen video { max-height: none; flex: 1; margin: 0; border-radius: 0; }
+.player .controls { display: flex; gap: 8px; align-items: center; padding: 6px 0; }
+.player .controls button { min-width: 40px; padding: 4px 8px; }
+.player .seek { flex: 1; min-width: 80px; accent-color: var(--accent); }
+.player .clock { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 13px; }
+.player .loading {
+  position: absolute; top: 12px; left: 0; right: 0; bottom: 48px;
+  display: grid; place-items: center; pointer-events: none;
+  color: var(--text); background: rgb(0 0 0 / 40%); border-radius: 8px;
+}
+.player .loading[hidden] { display: none; }
 
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -147,3 +161,8 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
 .tracks { margin: 4px 0 12px; }
 .tracks label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
 .tracks select { max-width: 320px; }
+.summary { max-width: 70ch; line-height: 1.5; }
+.tagline { font-style: italic; color: var(--muted); margin: 0 0 8px; }
+.cast ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; }
+.cast { margin-bottom: 12px; }
+.cast h2 { margin-top: 16px; }

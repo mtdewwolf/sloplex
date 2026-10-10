@@ -11,6 +11,8 @@
   - the numeric item types (1 movie, 2 show, 3 season, 4 episode);
   - the `X-Plex-*` header names;
   - the endpoint paths, including `/children` and `/allLeaves`.
+- The `inotify` interface used for watching comes from the Linux man pages
+  (`inotify(7)`).
 - Items marked **(sloplex)** are our own choices.
 
 ## Transport
@@ -124,7 +126,7 @@ Extra attributes by type:
 | movie   | `duration` (ms, from the first Media)                              |
 | show    | `childCount` (seasons), `leafCount` (episodes)                     |
 | season  | `index` (season number, 0 = specials), `leafCount`, `parentRatingKey`, `parentKey`, `parentTitle` |
-| episode | `index` (episode number), `parentIndex` (season number), `duration`, `parentRatingKey`, `parentKey`, `parentTitle`, `grandparentRatingKey`, `grandparentKey`, `grandparentTitle` |
+| episode | `index` (episode number), `parentIndex` (season number), `duration`, `originallyAvailableAt` (air date, when known), `parentRatingKey`, `parentKey`, `parentTitle`, `grandparentRatingKey`, `grandparentKey`, `grandparentTitle` |
 
 Notes:
 
@@ -232,8 +234,9 @@ Starts an asynchronous rescan of the section and returns `200` with an empty
 body. **Admins only**; other accounts get `403`; see
 [accounts.md](accounts.md).
 
-- **(sloplex)** If a scan of that section is already running, this is a no-op
-  that still returns `200`.
+- **(sloplex)** If a scan of that section is already running, one more scan
+  is queued to run after it, so changes made during the running scan are
+  not missed. See **When scans run**.
 - Returns 404 if the section is unknown.
 
 ### `GET /library/recentlyAdded`
@@ -297,6 +300,43 @@ Streams the original file bytes ("direct play").
   section's existing items stay as they are. This keeps an unmounted drive
   from wiping the library.
 
+### When scans run
+
+A section is scanned:
+
+- at startup;
+- on `GET|PUT /library/sections/{id}/refresh`;
+- when its folders change, if watching is on (see **Watching**);
+- every `scanInterval` (config; default `1h`). `0` turns interval scans off.
+  This is the backup for changes that watching cannot see.
+
+**Queueing.** A scan requested while the same section is being scanned runs
+once more when the current scan finishes. Requests made during that wait
+are merged into that one extra scan.
+
+### Watching
+
+With `watch` set (config; default `true`), the server watches every
+directory under each section's paths, except the directories the scanner
+skips.
+
+- These count as changes:
+  - a file or directory being created, deleted, or renamed;
+  - a file being closed after writing.
+- Names that start with `.` are ignored. Copy tools such as rsync use them
+  for files still in transfer, and then rename the file into place.
+- A section is scanned once its changes settle: 5 s after the last change,
+  but no later than 60 s after the first.
+- New directories are watched as they appear.
+- Watching uses Linux `inotify`.
+  - On other systems, the server logs that watching is unavailable and
+    relies on interval scans.
+  - Network file systems (NFS, SMB) do not report changes made by other
+    machines, so they also rely on interval scans.
+  - If the kernel's watch limit (`fs.inotify.max_user_watches`) is reached,
+    the server logs a warning. Directories beyond the limit are covered by
+    interval scans only.
+
 ### Movie sections
 
 - Title and year are parsed from the file name. Examples:
@@ -317,7 +357,8 @@ Season and episode numbers come from the file name, tried in this order:
    Multi-episode forms such as `S01E01E02` and `S01E01-E02` are accepted;
    only the first episode number is used.
 2. `1x02`.
-3. Only when the file sits in a season folder: an `E02`, `Ep02`, or
+3. An air date (see **Date-based episodes**).
+4. Only when the file sits in a season folder: an `E02`, `Ep02`, or
    `Episode 2` token, or a leading number such as `02 - Title`.
 
 The folder rules are:
@@ -341,4 +382,26 @@ Other rules:
   entries) of that episode.
 - Show and season IDs are kept across rescans while their title, year, or
   index stays the same.
-- Date-based episodes, such as `Show 2024-01-15`, are **not supported yet**.
+#### Date-based episodes
+
+Daily and weekly shows can be named by air date, for example
+`The Daily Show - 2024-03-15 - Guest Name.mkv`.
+
+- Accepted dates:
+  - year first: `2024-03-15`, `2024.03.15`, `2024_03_15`, or `2024 03 15`;
+  - day first: `15-03-2024`, `15.03.2024`, `15_03_2024`, or `15 03 2024`.
+- The year must be from 1900 to 2099, and the date must exist; `2024-02-30`
+  is not a date.
+- The date counts only as a whole token: digits next to it make it no match.
+- The show title and year come from the folder or the text before the date,
+  as for other episodes. The episode title is the text after the date.
+- **(sloplex)** The season number is the year. The episode number is
+  month × 100 + day, so `2024-03-15` is season 2024, episode 315, and
+  episodes sort by date.
+- **(sloplex)** Two files with the same show and date become versions of
+  one episode.
+- The episode's `originallyAvailableAt` is the date as `YYYY-MM-DD`.
+- **(sloplex)** A season numbered 1000 or above is titled with just its
+  number, such as `2024`, instead of `Season 2024`.
+- **(sloplex)** If no file of the episode has a title, the title is the date
+  as `YYYY-MM-DD`, instead of `Episode N`.

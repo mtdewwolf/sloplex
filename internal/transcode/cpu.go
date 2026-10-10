@@ -97,10 +97,27 @@ const (
 
 // Load estimates the share of the whole machine a software encode needs to
 // keep up with real time at a preset. It is 0 when video is copied or the
-// capacity is unknown.
+// capacity is unknown. VP9 encoding instead reserves the planning budget.
 func (c Capacity) Load(src probe.Info, p Plan, preset string) float64 {
+	return c.load(src, p, preset, true)
+}
+
+// filterLoad estimates CPU decode/filter work for encode-only GPU pipelines.
+func (c Capacity) filterLoad(src probe.Info, p Plan) float64 {
+	return c.load(src, p, DefaultPreset, false)
+}
+
+func (c Capacity) load(src probe.Info, p Plan, preset string, encode bool) float64 {
+	if p.CopyVideo {
+		return 0
+	}
+	// VP9 is not calibrated by the x264 benchmark. Reserve the whole
+	// planning budget rather than reporting an invented x264 estimate.
+	if p.WebM {
+		return targetLoad
+	}
 	ref, enc := c[DefaultPreset], c[preset]
-	if p.CopyVideo || ref <= 0 || enc <= 0 {
+	if ref <= 0 || enc <= 0 {
 		return 0
 	}
 	bench := float64(benchW * benchH)
@@ -128,13 +145,20 @@ func (c Capacity) Load(src probe.Info, p Plan, preset string) float64 {
 		fps = defaultFrameRate
 	}
 	// Seconds of the whole machine per frame, times frames per second.
-	return fps * (out/(enc*bench) + (in*decode+out*extra)/(ref*bench))
+	encoding := 0.0
+	if encode {
+		encoding = out / (enc * bench)
+	}
+	return fps * (encoding + (in*decode+out*extra)/(ref*bench))
 }
 
 // ChoosePreset returns the best-quality preset whose load, added to the
 // load of the software encodes already running, stays within the target,
 // and that load. With unknown capacity it returns DefaultPreset and 0.
 func (c Capacity) ChoosePreset(running float64, src probe.Info, p Plan) (string, float64) {
+	if p.WebM {
+		return "", c.Load(src, p, "")
+	}
 	if len(c) == 0 || p.CopyVideo {
 		return DefaultPreset, 0
 	}

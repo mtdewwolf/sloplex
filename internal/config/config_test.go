@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad(t *testing.T) {
@@ -23,6 +24,14 @@ func TestLoad(t *testing.T) {
 	if p, _ := cfg.Port(); p != 32400 {
 		t.Errorf("port = %d", p)
 	}
+	if d, err := cfg.ScanEvery(); !cfg.Watch || d != time.Hour || err != nil {
+		t.Errorf("watch = %v, scan interval = %v %v; want on and 1h by default", cfg.Watch, d, err)
+	}
+	for in, want := range map[string]time.Duration{"0": 0, "": 0, "30m": 30 * time.Minute} {
+		if d, err := (Config{ScanInterval: in}).ScanEvery(); d != want || err != nil {
+			t.Errorf("ScanEvery(%q) = %v %v", in, d, err)
+		}
+	}
 }
 
 func TestValidate(t *testing.T) {
@@ -37,6 +46,8 @@ func TestValidate(t *testing.T) {
 		"bad listen":  {func(c *Config) { c.Listen = "32400" }, "listen"},
 		"bad network": {func(c *Config) { c.AllowedNetworks = []string{"10.0.0.0"} }, "allowedNetworks"},
 		"bad hwaccel": {func(c *Config) { c.Hwaccel = "cuda" }, "hwaccel"},
+		"bad scan":    {func(c *Config) { c.ScanInterval = "hourly" }, "scanInterval"},
+		"short scan":  {func(c *Config) { c.ScanInterval = "10s" }, "scanInterval"},
 		"bad preset":  {func(c *Config) { c.X264Preset = "placebo" }, "x264Preset"},
 	} {
 		cfg := Default()
