@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the real Compose recipe against a locally built image; never publish.
-Needs Docker + Compose v2, Python 3. Run: python3 test/container/smoke.py IMAGE
+Needs Docker + Compose v2, Python 3. Run: python3 test/container/smoke.py IMAGE [--tailscale]
+--tailscale adds deploy/compose.tailscale.yaml; Tailscale starts but never logs in.
 All generated state is temporary. Never print server logs or the owner token.
 """
 import json
@@ -25,14 +26,58 @@ def command(*args, check=True):
     return result
 
 
+def tailscale_status(compose):
+    """Returns tailscaled's backend state, retrying while it starts or restarts."""
+    for _ in range(30):
+        tid = command(*compose, "ps", "-q", "tailscale").stdout.strip()
+        result = command("docker", "exec", tid, "tailscale", "--socket=/tmp/tailscaled.sock",
+                         "status", "--json", check=False) if tid else None
+        if result and result.stdout.strip().startswith("{"):
+            return json.loads(result.stdout)["BackendState"]
+        time.sleep(1)
+    raise RuntimeError("tailscaled did not answer within 30 seconds")
+
+
+def tailscale_reaches_sloplex(compose, seconds):
+    """Waits until the Tailscale container reaches Sloplex where it proxies to."""
+    for _ in range(seconds):
+        tid = command(*compose, "ps", "-q", "tailscale").stdout.strip()
+        if tid and command("docker", "exec", tid, "wget", "-q", "-T", "3", "-O", "/dev/null",
+                           "http://sloplex:32400/identity", check=False).returncode == 0:
+            return
+        time.sleep(1)
+    raise RuntimeError(f"the Tailscale container did not reach Sloplex within {seconds} seconds")
+
+
+def check_tailscale(compose, work, uid, gid):
+    tid = command(*compose, "ps", "-q", "tailscale").stdout.strip()
+    info = json.loads(command("docker", "inspect", tid).stdout)[0]
+    host = info["HostConfig"]
+    assert info["Config"]["User"] == f"{uid}:{gid}"
+    assert host["ReadonlyRootfs"] and not host["Privileged"] and host["CapDrop"] == ["ALL"]
+    assert not host.get("Devices") and not host.get("CapAdd")
+    assert not host["NetworkMode"].startswith(("container:", "host")), host["NetworkMode"]
+    tailscale_reaches_sloplex(compose, 30)
+    assert tailscale_status(compose) in ("NoState", "NeedsLogin", "Starting")
+    serve = json.loads(command("docker", "exec", tid, "cat", "/tmp/serve.json").stdout)
+    site = "${TS_CERT_DOMAIN}:443"
+    assert serve["Web"][site]["Handlers"]["/"]["Proxy"] == "http://sloplex:32400"
+    assert serve["TCP"]["443"]["HTTPS"] is True and serve["AllowFunnel"][site] is False
+    assert (work / "tailscale/tailscaled.state").exists()
+
+
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: smoke.py IMAGE")
+    args = sys.argv[1:]
+    tailscale = "--tailscale" in args
+    images = [a for a in args if a != "--tailscale"]
+    if len(images) != 1:
+        raise SystemExit("usage: smoke.py IMAGE [--tailscale]")
+    image = images[0]
     uid, gid = (os.getuid(), os.getgid()) if os.getuid() else (65532, 65532)
     with tempfile.TemporaryDirectory(prefix="sloplex-container-") as directory:
         work = Path(directory)
         work.chmod(0o755)
-        for name in ("state", "scratch", "media"):
+        for name in ("state", "scratch", "media", "tailscale"):
             path = work / name
             path.mkdir()
             if os.getuid() == 0:
@@ -44,15 +89,18 @@ def main():
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
         settings = {
-            "SLOPLEX_IMAGE": sys.argv[1], "SLOPLEX_UID": uid, "SLOPLEX_GID": gid,
+            "SLOPLEX_IMAGE": image, "SLOPLEX_UID": uid, "SLOPLEX_GID": gid,
             "SLOPLEX_PORT": port, "SLOPLEX_BIND_IP": "127.0.0.1",
             "SLOPLEX_CONFIG": config, "SLOPLEX_STATE": work / "state",
             "SLOPLEX_SCRATCH": work / "scratch", "SLOPLEX_MEDIA": work / "media",
+            "SLOPLEX_TS_STATE": work / "tailscale",
         }
         env = work / "env"
         env.write_text("".join(f"{key}={value}\n" for key, value in settings.items()))
         compose = ["docker", "compose", "--env-file", str(env), "-p", work.name,
                    "-f", str(ROOT / "deploy/compose.yaml")]
+        if tailscale:
+            compose += ["-f", str(ROOT / "deploy/compose.tailscale.yaml")]
         command(*compose, "config", "--quiet")
         try:
             command(*compose, "up", "-d")
@@ -105,6 +153,8 @@ def main():
                 data=json.dumps({"username": "owner", "password": password}).encode(),
                 headers={"Content-Type": "application/json"})
             assert urllib.request.urlopen(login, timeout=10).status == 200
+            if tailscale:
+                check_tailscale(compose, work, uid, gid)
             command(*compose, "restart")
             for _ in range(60):
                 try:
@@ -116,7 +166,11 @@ def main():
             else:
                 raise RuntimeError("server did not recover after restart")
             assert (work / "state/identity.json").read_bytes() == identity
-            print("Container smoke passed: health, non-root, read-only media/root, isolated state/scratch, CPU encode/probe, web, auth, owner bootstrap/login, restart persistence.")
+            if tailscale:
+                # Both restart independently and find each other again.
+                tailscale_reaches_sloplex(compose, 60)
+            print("Container smoke passed: health, non-root, read-only media/root, isolated state/scratch, CPU encode/probe, web, auth, owner bootstrap/login, restart persistence"
+                  + (", Tailscale sidecar." if tailscale else "."))
         finally:
             command(*compose, "down", "--volumes", check=False)
 

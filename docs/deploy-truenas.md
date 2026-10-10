@@ -205,6 +205,119 @@ review logs privately. Do not weaken security options or make media
 writable to work around a permission failure. Scanner permissions can
 produce an empty library even while the health check is green.
 
+## Remote access with Tailscale
+
+[Tailscale](https://tailscale.com) can make Sloplex reachable from your own
+devices anywhere, at `https://sloplex.<your-tailnet>.ts.net`, with a real
+HTTPS certificate. It does not open a port on your router or put Sloplex
+on the internet. Only devices signed in to your tailnet can reach it, and
+Sloplex's own sign-in still applies.
+
+A small Tailscale container runs inside the Sloplex app. It joins your
+tailnet as its own device named `sloplex` and passes requests to Sloplex
+over the app's network. It runs as the same non-root user, with a
+read-only filesystem and no extra privileges or devices. The two
+containers restart independently.
+
+### Before you start
+
+1. In the [Tailscale admin console](https://login.tailscale.com/admin), on
+   the **DNS** page, turn on **MagicDNS** and, under **HTTPS Certificates**,
+   **Enable HTTPS**.
+2. Create a dataset for Tailscale's state, such as
+   `/mnt/POOL/apps/sloplex-tailscale`. Give the same user as Sloplex's state
+   dataset read and write access. It holds the device's keys, so keep it
+   private and out of shared backups.
+3. In the admin console, **Settings → Keys → Generate auth key**. Leave it
+   **not reusable**, and turn on **Pre-approved** if your tailnet requires
+   device approval. The key is spent at the first login. Without a key,
+   Tailscale prints a login link in its log instead. Each link lasts a
+   minute before Tailscale restarts with a new one.
+
+### Add Tailscale to the app
+
+In **Apps → sloplex → Edit**, add this block under `services:`, at the
+same indentation as `sloplex:`. Replace `3000:3000` with the user and
+group in Sloplex's `user:` line, the state path with your dataset, and the
+key with yours. Copy the rest exactly, including both `$$` signs:
+
+```yaml
+  tailscale:
+    image: tailscale/tailscale:stable
+    depends_on: [sloplex]
+    user: "3000:3000"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: ["/bin/sh", "-c", "printf '%s' \"$$SLOPLEX_SERVE\" > /tmp/serve.json && exec /usr/local/bin/containerboot"]
+    environment:
+      TS_HOSTNAME: sloplex
+      TS_AUTHKEY: "tskey-auth-REPLACE"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /tmp/tailscaled.sock
+      TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /tmp/serve.json
+      SLOPLEX_SERVE: >-
+        {"TCP":{"443":{"HTTPS":true}},
+        "Web":{"$${TS_CERT_DOMAIN}:443":{"Handlers":{"/":{"Proxy":"http://sloplex:32400"}}}},
+        "AllowFunnel":{"$${TS_CERT_DOMAIN}:443":false}}
+    volumes:
+      - type: bind
+        source: /mnt/POOL/apps/sloplex-tailscale
+        target: /var/lib/tailscale
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+`deploy/compose.tailscale.yaml` is the same block for rendering with
+`docker compose` and an env file, as in **Prepare config and render
+Compose**. Fill the `SLOPLEX_TS_` values in your env file, then add
+`-f deploy/compose.tailscale.yaml` after `-f deploy/compose.yaml`.
+
+**Save**. TrueNAS pulls the Tailscale image and starts it next to Sloplex.
+Within a minute, the device `sloplex` appears in the Tailscale admin
+console. The container's log, under **Workloads → tailscale → Logs**,
+shows any problem. After that:
+
+- In the admin console, open the device's menu and choose **Disable key
+  expiry**. Otherwise Tailscale asks for a new login after 180 days.
+- The spent key can stay in the YAML, or you can delete the `TS_AUTHKEY`
+  line. Logins after the first use the saved state.
+- On a phone or laptop signed in to your tailnet, open
+  `https://sloplex.<your-tailnet>.ts.net/web/`. The admin console's **DNS**
+  page shows your tailnet's name. The very first visit can take a few
+  seconds while the certificate is issued.
+
+### Keeping it private
+
+- Funnel, which would publish Sloplex on the public internet, stays off.
+  Don't turn it on: Sloplex is not hardened for that.
+- Keep `allowedNetworks: []`. Requests from your tailnet reach Sloplex
+  from the Tailscale container's address inside the app. Allowing that
+  network would let every device on your tailnet in as the owner, without
+  a password.
+- Tailscale's access controls can limit which of your tailnet's users and
+  devices may reach `sloplex`.
+- Plex's own apps find servers through plex.tv, which Sloplex never uses.
+  Away from home, use the web app, or an app that accepts a server address:
+  give it `https://sloplex.<your-tailnet>.ts.net`.
+
+TrueNAS updates the Tailscale image like Sloplex's: `stable` is a moving
+tag, so new Tailscale releases get the same update badge, and one-click
+updates from Sloplex pull it too. To remove remote access, delete the
+`tailscale:` block, save, and remove the device in the admin console.
+
 ## Updates
 
 Watch the repository's releases on GitHub (**Watch**, then **Custom**, then

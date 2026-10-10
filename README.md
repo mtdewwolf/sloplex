@@ -69,7 +69,8 @@ curl -H "X-Plex-Token: $TOKEN" -H "Accept: application/json" localhost:32400/lib
 Each release publishes a CPU-only image, `ghcr.io/mtdewwolf/sloplex`,
 tagged with its version, `X.Y`, and `latest`. For a TrueNAS 25.10 (Goldeye)
 Custom App that installs it and offers each new release, see
-[the deployment guide](docs/deploy-truenas.md).
+[the deployment guide](docs/deploy-truenas.md). The guide also adds
+remote access over Tailscale, at `https://sloplex.<your-tailnet>.ts.net`.
 [Releases](docs/releases.md) covers the tags and making a release.
 
 ### Web app

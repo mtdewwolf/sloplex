@@ -1,0 +1,48 @@
+# Adds remote access over Tailscale to compose.yaml; see "Remote access
+# with Tailscale" in docs/deploy-truenas.md. Render both together:
+#   docker compose --env-file FILLED.env -f deploy/compose.yaml \
+#     -f deploy/compose.tailscale.yaml config --no-path-resolution
+services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    # Tailscale serves Sloplex at https://<hostname>.<tailnet>.ts.net to your
+    # tailnet only, passing requests to it over the app's own network. The
+    # two containers restart independently.
+    depends_on: [sloplex]
+    user: "${SLOPLEX_UID:?Choose a non-root NAS UID}:${SLOPLEX_GID:?Choose its non-root GID}"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: ["/bin/sh", "-c", "printf '%s' \"$$SLOPLEX_SERVE\" > /tmp/serve.json && exec /usr/local/bin/containerboot"]
+    environment:
+      TS_HOSTNAME: "${SLOPLEX_TS_HOSTNAME:-sloplex}"
+      # A one-off auth key for the first login. Without one, this
+      # container's log shows a login link, valid for a minute at a time.
+      TS_AUTHKEY: "${SLOPLEX_TS_AUTHKEY:-}"
+      TS_AUTH_ONCE: "true"
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /tmp/tailscaled.sock
+      TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /tmp/serve.json
+      # Tailscale fills in ${TS_CERT_DOMAIN}. Funnel, which would publish
+      # Sloplex on the internet, stays off.
+      SLOPLEX_SERVE: >-
+        {"TCP":{"443":{"HTTPS":true}},
+        "Web":{"$${TS_CERT_DOMAIN}:443":{"Handlers":{"/":{"Proxy":"http://sloplex:32400"}}}},
+        "AllowFunnel":{"$${TS_CERT_DOMAIN}:443":false}}
+    volumes:
+      - type: bind
+        source: "${SLOPLEX_TS_STATE:?Absolute path to a dedicated dataset for Tailscale's state}"
+        target: /var/lib/tailscale
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

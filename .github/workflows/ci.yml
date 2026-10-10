@@ -67,3 +67,5 @@ jobs:
         run: docker build --build-arg VERSION="${GITHUB_SHA}" -t sloplex:ci .
       - name: Exercise Compose security, media tools, auth and persistence
         run: python3 test/container/smoke.py sloplex:ci
+      - name: Same, with the Tailscale sidecar (which never logs in here)
+        run: python3 test/container/smoke.py sloplex:ci --tailscale
