@@ -7,12 +7,14 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
 func solid(w, h int, c color.Color) *image.RGBA {
@@ -114,26 +116,6 @@ func clip(t *testing.T, ffmpeg, path string, args ...string) string {
 	return path
 }
 
-// meanLuma decodes a JPEG and averages its luma.
-func meanLuma(t *testing.T, path string) float64 {
-	t.Helper()
-	f, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	img, err := jpeg.Decode(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	y := img.(*image.YCbCr)
-	sum := 0
-	for _, v := range y.Y {
-		sum += int(v)
-	}
-	return float64(sum) / float64(len(y.Y))
-}
-
 func TestFrame(t *testing.T) {
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -201,8 +183,26 @@ func TestFrame(t *testing.T) {
 	}
 }
 
-// TestFrameHDR checks that HDR video is tone mapped: the still of a PQ clip
-// differs clearly from the same clip read as SDR.
+// TestStillFilter checks that HDR video is tone mapped with the
+// transcoder's filter, after scaling down and before choosing a frame. The
+// transcode tests check that the filter itself maps correctly.
+func TestStillFilter(t *testing.T) {
+	sdr := stills[MoviePoster].filter("")
+	if strings.Contains(sdr, "tonemap") || !strings.HasPrefix(sdr, "scale=960:") {
+		t.Errorf("SDR poster filter: %s", sdr)
+	}
+	for _, hdr := range []string{"pq", "hlg"} {
+		f := stills[MoviePoster].filter(hdr)
+		tm := transcode.ToneMapFilter(hdr, 0, 0)
+		i, j := strings.Index(f, ",setsar=1,"+tm+","), strings.Index(f, "thumbnail=")
+		if i < 0 || j < i {
+			t.Errorf("%s poster filter: %s", hdr, f)
+		}
+	}
+}
+
+// TestFrameHDR runs a still of a real PQ clip, so the tone mapping filter
+// graph must be valid for ffmpeg.
 func TestFrameHDR(t *testing.T) {
 	ffmpeg, err := exec.LookPath("ffmpeg")
 	if err != nil {
@@ -213,16 +213,20 @@ func TestFrameHDR(t *testing.T) {
 		"-pix_fmt", "yuv420p10le", "-c:v", "libx265", "-x265-params", "log-level=error",
 		"-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc")
 	s := New(filepath.Join(dir, "cache"), ffmpeg)
-	naive, err := s.Frame(context.Background(), MovieArt, Source{PartID: 1, ModTime: 1, File: pq, Duration: 2000})
-	if err != nil {
-		t.Fatal(err)
-	}
-	mapped, err := s.Frame(context.Background(), MovieArt, Source{PartID: 2, ModTime: 1, File: pq, Duration: 2000, HDR: "pq"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if n, m := meanLuma(t, naive), meanLuma(t, mapped); math.Abs(m-n) < 20 {
-		t.Errorf("tone mapped luma %.0f, naive %.0f; want a clear difference", m, n)
+	for kind, w := range map[Still]int{MoviePoster: 600, MovieArt: 1280, EpisodeThumb: 640} {
+		path, err := s.Frame(context.Background(), kind, Source{PartID: int(kind), ModTime: 1, File: pq, Duration: 2000, HDR: "pq"})
+		if err != nil {
+			t.Fatalf("still %d: %v", kind, err)
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := jpeg.DecodeConfig(f)
+		f.Close()
+		if err != nil || cfg.Width != w {
+			t.Errorf("still %d: %+v %v, want width %d", kind, cfg, err, w)
+		}
 	}
 }
 
