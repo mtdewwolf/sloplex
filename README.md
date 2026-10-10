@@ -164,8 +164,10 @@ Install ffmpeg (which includes `ffprobe`) to get these extras:
 - duration, codec, and resolution details. Without `ffprobe`, Sloplex
   reports only the container.
 - generated thumbnails for episodes that have no image;
-- transcoding for clients that can't play a file as it is. Clients use
-  `/video/:/transcode/universal/start.m3u8` (HLS), `start.mp4`, or
+- transcoding for clients that can't play a file as it is. Clients can ask
+  `/video/:/transcode/universal/decision` first, describing what they play,
+  to learn whether a file plays directly, needs only a remux, or needs
+  converting. They then use `start.m3u8` (HLS), `start.mp4`, or
   `start.webm`; see
   [docs/spec/transcode.md](docs/spec/transcode.md).
 

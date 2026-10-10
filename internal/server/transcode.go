@@ -25,6 +25,7 @@ func (s *Server) transcodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+transcodeBase+"/start.m3u8", s.handleTranscodeHLS)
 	mux.HandleFunc("GET "+transcodeBase+"/start.mp4", s.handleTranscodeMP4)
 	mux.HandleFunc("GET "+transcodeBase+"/start.webm", s.handleTranscodeWebM)
+	mux.HandleFunc("GET "+transcodeBase+"/decision", s.handleTranscodeDecision)
 	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/base/{file}", s.handleTranscodeFile)
 	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/subs/{stream}/{file}", s.handleTranscodeSubs)
 	for _, m := range []string{"GET ", "PUT "} {

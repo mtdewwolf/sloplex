@@ -36,6 +36,14 @@ type MediaContainer struct {
 	Hub      []Hub         `xml:"Hub" json:"Hub,omitempty"`
 
 	TranscodeSession []TranscodeSession `xml:"TranscodeSession" json:"TranscodeSession,omitempty"`
+
+	// Playback decision; see the decision endpoint in docs/spec/transcode.md.
+	GeneralDecisionCode    int    `xml:"generalDecisionCode,attr,omitempty" json:"generalDecisionCode,omitempty"`
+	GeneralDecisionText    string `xml:"generalDecisionText,attr,omitempty" json:"generalDecisionText,omitempty"`
+	DirectPlayDecisionCode int    `xml:"directPlayDecisionCode,attr,omitempty" json:"directPlayDecisionCode,omitempty"`
+	DirectPlayDecisionText string `xml:"directPlayDecisionText,attr,omitempty" json:"directPlayDecisionText,omitempty"`
+	TranscodeDecisionCode  int    `xml:"transcodeDecisionCode,attr,omitempty" json:"transcodeDecisionCode,omitempty"`
+	TranscodeDecisionText  string `xml:"transcodeDecisionText,attr,omitempty" json:"transcodeDecisionText,omitempty"`
 }
 
 // TranscodeSession describes a running transcode; see
@@ -206,7 +214,10 @@ type Media struct {
 	VideoCodec      string `xml:"videoCodec,attr,omitempty" json:"videoCodec,omitempty"`
 	VideoResolution string `xml:"videoResolution,attr,omitempty" json:"videoResolution,omitempty"`
 	Container       string `xml:"container,attr,omitempty" json:"container,omitempty"`
-	Part            []Part `xml:"Part" json:"Part"`
+	// Selected and Protocol are set by the decision endpoint.
+	Selected Bool   `xml:"selected,attr,omitempty" json:"selected,omitempty"`
+	Protocol string `xml:"protocol,attr,omitempty" json:"protocol,omitempty"`
+	Part     []Part `xml:"Part" json:"Part"`
 }
 
 // Part is one file of a Media.
@@ -217,6 +228,8 @@ type Part struct {
 	File      string `xml:"file,attr" json:"file"`
 	Size      int64  `xml:"size,attr" json:"size"`
 	Container string `xml:"container,attr,omitempty" json:"container,omitempty"`
+	// Decision is set by the decision endpoint.
+	Decision string `xml:"decision,attr,omitempty" json:"decision,omitempty"`
 	// Stream is only included in item detail; see docs/spec/streams.md.
 	Stream []StreamElem `xml:"Stream" json:"Stream,omitempty"`
 }
@@ -241,6 +254,8 @@ type StreamElem struct {
 	HearingImpaired      Bool   `xml:"hearingImpaired,attr,omitempty" json:"hearingImpaired,omitempty"`
 	Selected             Bool   `xml:"selected,attr,omitempty" json:"selected,omitempty"`
 	Key                  string `xml:"key,attr,omitempty" json:"key,omitempty"`
+	// Decision is set by the decision endpoint.
+	Decision string `xml:"decision,attr,omitempty" json:"decision,omitempty"`
 }
 
 func wantsJSON(r *http.Request) bool {

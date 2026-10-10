@@ -11,7 +11,12 @@
   - the parameters `path`, `mediaIndex`, `partIndex`, `offset`,
     `videoResolution`, `maxVideoBitrate`, `directStream`, and `session`;
   - the `TranscodeSession` element, including its `transcodeHwEncoding` and
-    `transcodeHwFullPipeline` attributes.
+    `transcodeHwFullPipeline` attributes;
+  - the `decision` endpoint path, its `directPlay` parameter, the
+    `generalDecisionCode`/`Text`, `directPlayDecisionCode`/`Text`, and
+    `transcodeDecisionCode`/`Text` attributes, and the `decision` attribute
+    on `Part` (`directplay`, `copy`, `transcode`) and `Stream` (`copy`,
+    `transcode`, `burn`).
 - The VP9 and Opus encoder options (`libvpx-vp9 -deadline realtime
   -cpu-used -row-mt`, `libopus`) come from ffmpeg's public documentation.
 - The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
@@ -21,7 +26,9 @@
 - These are **(sloplex)**:
   - the progressive `start.mp4` and `start.webm` endpoints;
   - capability session URLs;
-  - the decision rules, limits, idle timeout, and ffmpeg arguments.
+  - the decision rules, limits, idle timeout, and ffmpeg arguments;
+  - the client capability parameters of the `decision` endpoint, and its
+    decision codes and texts.
 
 ## Model
 
@@ -262,6 +269,76 @@ response cannot be seeked. Closing the connection stops the transcode.
 The same as `start.mp4`, but it streams WebM (`video/webm`) as described in
 **WebM**.
 
+### `GET /video/:/transcode/universal/decision`
+
+Tells a client, before it starts playback, whether it can play a part as it
+is, or what a conversion would do. Nothing is started.
+
+It takes the same parameters as `start.m3u8` (media, `offset`,
+`videoResolution`, `maxVideoBitrate`, `directStream`, and the stream
+parameters in [streams.md](streams.md)), plus:
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `protocol` | `hls` | The conversion the client would use: `hls`, `http` (`start.mp4`), or `webm` (`start.webm`) |
+| `directPlay` | `1` | `0` rules out direct play |
+| `containers` | `mp4` | **(sloplex)** Containers the client plays directly, comma-separated, as in `Part.container` (`mkv`, `mp4`, `webm`, `mpegts`, `avi`, `mov`, …) |
+| `videoCodecs` | `h264` | **(sloplex)** Video codecs the client decodes, as ffprobe names them (`h264`, `hevc`, `vp9`, `av1`, …) |
+| `audioCodecs` | `aac,mp3` | **(sloplex)** Audio codecs the client decodes (`aac`, `ac3`, `eac3`, `opus`, `flac`, …) |
+| `maxAudioChannels` | `2` | **(sloplex)** The most audio channels the client plays |
+| `hdr` | `0` | **(sloplex)** `1` if the client displays HDR |
+
+Lists are matched without regard to case.
+
+**Direct play** is possible when all of these hold:
+
+- `directPlay` is not `0`;
+- the part's container is in `containers`;
+- the video codec is in `videoCodecs`;
+- the selected audio stream's codec is in `audioCodecs`, with at most
+  `maxAudioChannels` channels (a part without audio passes);
+- the video fits `videoResolution` and `maxVideoBitrate`, when given;
+- the video is not HDR, or `hdr=1`;
+- nothing must be burned in. An image subtitle that is selected, or any
+  selected subtitle with `subtitles=burn`, rules out direct play. Text
+  subtitles do not, because the client fetches them from
+  `/library/streams/{id}`.
+
+**Conversion** follows the decisions above for the chosen `protocol`. It is
+possible when ffmpeg is available and the client decodes its output: the
+output video codec (`h264`, or `vp9` for `webm`) is in `videoCodecs` and
+the output audio codec (`aac`, or `opus` for `webm`) is in `audioCodecs`.
+Copied streams count as their own codec.
+
+The response is a `MediaContainer` with one item, rendered as in lists. Its
+first `Media` has `selected="1"` and describes what the client would get:
+
+- **Direct play:** the stored `Media` and `Part`. The `Part` has
+  `decision="directplay"`.
+- **Conversion:**
+  - `Media` has `protocol` (`hls`, `http`, or `webm`), `container`
+    (`mpegts`, `mp4`, or `webm`), the output `videoCodec` and `audioCodec`,
+    `width`, `height`, and `bitrate` in kbps.
+  - `Part` has `decision="copy"` when the video is copied, otherwise
+    `decision="transcode"`.
+  - The `Part` holds the video `Stream` and the selected audio `Stream`,
+    each with `decision` `copy` or `transcode`. A subtitle that would be
+    burned in is included too, with `decision="burn"`.
+
+**(sloplex)** The container attributes:
+
+| Attribute | Values |
+|---|---|
+| `generalDecisionCode`, `generalDecisionText` | `1000` `Direct play OK.`; `1001` `Direct play not available; Conversion OK.`; `2000` `Neither direct play nor conversion is available.` |
+| `directPlayDecisionCode`, `directPlayDecisionText` | `1000` `Direct play OK.`; `3000` `Direct play not available: ` followed by every reason, separated by `; `, for example `the container mkv is not supported; the audio codec ac3 is not supported` |
+| `transcodeDecisionCode`, `transcodeDecisionText` | Only when direct play is not possible. `1001` `Conversion OK.`; `4000` `Conversion not available: ` and a reason, such as `ffmpeg is not installed` or `the client does not decode h264` |
+
+With code `2000`, the item has no `Media`.
+
+Errors are as for `start.m3u8`: `400` for bad parameters, `404` for unknown
+or hidden media. A bad `protocol`, `directPlay`, `maxAudioChannels`, or `hdr`
+value is also `400`.
+
 ### `GET|PUT /video/:/transcode/universal/stop`
 
 Stops the caller's HLS sessions that carry `session=<label>`, deletes their
@@ -305,4 +382,3 @@ transcode:
 - Dolby Vision profile 5, which has no HDR10 base layer, is not tone mapped
   correctly.
 - Adaptive bitrate ladders.
-- The `decision` endpoint.
