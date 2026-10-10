@@ -20,6 +20,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
+	"github.com/mtdewwolf/sloplex/internal/web"
 )
 
 // Options configures a Server.
@@ -94,6 +95,10 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /photo/:/transcode", s.handlePhotoTranscode)
 	s.accountRoutes(mux)
+	mux.Handle("GET /web/", web.Handler())
+	mux.HandleFunc("GET /web", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
+	})
 	mux.HandleFunc("GET /hubs/search", s.handleHubSearch)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /library/sections/{id}/search", s.handleSearch)

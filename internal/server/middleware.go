@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/mtdewwolf/sloplex/internal/accounts"
@@ -73,6 +74,17 @@ func newAuthenticator(master []string, networks []netip.Prefix, accts *accounts.
 	return a
 }
 
+// isPublic reports whether a path needs no token: a few fixed endpoints and
+// the static web app.
+func (a *authenticator) isPublic(path string) bool {
+	if a.public[path] {
+		return true
+	}
+	// Refuse dot segments outright rather than relying on the router to
+	// clean "/web/../library" before it reaches a handler.
+	return (path == "/web" || strings.HasPrefix(path, "/web/")) && !strings.Contains(path, "..")
+}
+
 // resolve returns the principal for a request's token, if valid.
 func (a *authenticator) resolve(r *http.Request) (principal, bool) {
 	tok := r.Header.Get(tokenHeader)
@@ -124,7 +136,7 @@ func (a *authenticator) wrap(next http.Handler) http.Handler {
 		}
 		if ok {
 			r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
-		} else if !a.public[r.URL.Path] {
+		} else if !a.isPublic(r.URL.Path) {
 			http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
 			return
 		}

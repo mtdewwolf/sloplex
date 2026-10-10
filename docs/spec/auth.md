@@ -34,6 +34,8 @@ These requests never require a token:
 
 - `GET /identity`;
 - `POST /sloplex/auth/login`;
+- `GET /web/` and everything under it (static app files; see
+  [web.md](web.md));
 - `OPTIONS` (CORS preflight) requests.
 
 Requests whose remote address falls in a CIDR from the config list

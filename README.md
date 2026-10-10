@@ -26,6 +26,7 @@ Sloplex is a standalone product:
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
 | Search                             | ✅ `/hubs/search`, `/search`, per-section; accent-insensitive, prefix matching |
+| Web app                            | ✅ `/web/`: sign-in, browse, search, play, account and admin pages |
 | Direct play (byte-range streaming) | ✅                                       |
 | Watched/resume state, On Deck      | ✅ scrobble, timeline, unwatched filter  |
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
@@ -55,6 +56,20 @@ TOKEN=$(jq -r .token data/identity.json)
 curl -H "X-Plex-Token: $TOKEN" localhost:32400/library/sections
 curl -H "X-Plex-Token: $TOKEN" -H "Accept: application/json" localhost:32400/library/sections/1/all
 ```
+
+### Web app
+
+Open `http://<server>:32400/web/` in a browser and sign in. The app lets you:
+
+- browse libraries, search, and play;
+- use On Deck and mark items watched or unwatched;
+- change your password and sign out devices.
+
+Admins also get an Admin page for managing accounts, library access, device
+tokens, and library refreshes.
+
+The browser plays files directly, so only formats it can decode will play,
+typically MP4/H.264 and WebM.
 
 ### Users
 
@@ -131,6 +146,7 @@ internal/playstate/ per-account watched/resume state
 internal/probe/     ffprobe wrapper
 internal/artwork/   frame grabs and cached image resizing
 internal/search/    query folding and scoring
+internal/web/       built-in web app (embedded static files)
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder
 docs/spec/          the clean-room protocol specification

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sloplex</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header id="top" hidden>
+    <a class="brand" href="#/library">Sloplex</a>
+    <nav>
+      <a href="#/library">Library</a>
+      <a href="#/account">Account</a>
+      <a href="#/admin" id="nav-admin" hidden>Admin</a>
+    </nav>
+    <form id="search" role="search">
+      <input id="search-input" type="search" placeholder="Search" aria-label="Search" maxlength="200">
+    </form>
+    <span id="whoami"></span>
+    <button id="signout" type="button">Sign out</button>
+  </header>
+  <main id="app" aria-live="polite"></main>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>

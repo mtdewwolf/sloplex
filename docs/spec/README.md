@@ -38,6 +38,7 @@ source.
 | [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
 | [artwork.md](artwork.md)   | Posters, backgrounds, frame grabs, image resizing          |
 | [search.md](search.md)     | Search, hubs, matching and ranking                         |
+| [web.md](web.md)           | The built-in web app at `/web/`                            |
 
 ## Conventions
 
