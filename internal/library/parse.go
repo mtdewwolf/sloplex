@@ -13,6 +13,11 @@ var (
 	// junkRE matches the first release-tag token; everything after it is noise.
 	junkRE  = regexp.MustCompile(`(?i)(?:^|\s)(?:2160p|1080p|1080i|720p|576p|480p|4k|uhd|bluray|blu-ray|bdrip|brrip|webrip|web-dl|webdl|web|hdtv|dvdrip|dvd|remux|x264|x265|h264|h265|hevc|xvid|hdr|10bit)(?:\s|$)`)
 	spaceRE = regexp.MustCompile(`\s+`)
+	// genreRE matches a genre written before the year: "Halloween - Horror".
+	genreRE = regexp.MustCompile(`(?i)\s+-\s+(?:action|adventure|animation|biography|comedy|crime|documentary|drama|family|fantasy|history|horror|music|musical|mystery|romance|sci-fi|science fiction|sport|thriller|war|western)$`)
+	// numberedRE matches collection numbering before a title: "01 Halloween",
+	// "02 - Halloween II", "03. Halloween III".
+	numberedRE = regexp.MustCompile(`^(\d{1,3})(?:\.|\)|\s+-)?\s+(\S.*)$`)
 )
 
 // ParseMovie derives a title and year from a movie file path. It looks at
@@ -61,7 +66,31 @@ func parseName(s string) (string, int) {
 			cut = loc[0]
 		}
 	}
-	return strings.TrimRight(strings.TrimSpace(s[:cut]), " -([{"), year
+	title := strings.TrimRight(strings.TrimSpace(s[:cut]), " -([{")
+	return genreRE.ReplaceAllString(title, ""), year
+}
+
+// dropNumbering removes collection numbering from movie titles: when two or
+// more files in one folder start with a number and one of the numbers has a
+// leading zero. See "Movie sections" in docs/spec/http-api.md.
+func dropNumbering(files []ScannedFile) {
+	numbered := map[string][]int{} // by folder
+	zero := map[string]bool{}
+	for i, f := range files {
+		if m := numberedRE.FindStringSubmatch(f.Title); m != nil {
+			dir := filepath.Dir(f.Path)
+			numbered[dir] = append(numbered[dir], i)
+			zero[dir] = zero[dir] || len(m[1]) > 1 && m[1][0] == '0'
+		}
+	}
+	for dir, idx := range numbered {
+		if len(idx) < 2 || !zero[dir] {
+			continue
+		}
+		for _, i := range idx {
+			files[i].Title = numberedRE.FindStringSubmatch(files[i].Title)[2]
+		}
+	}
 }
 
 // SortTitle returns the key used to sort titles: lower case, without one

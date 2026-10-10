@@ -99,6 +99,19 @@ type nfoDoc struct {
 
 var dateRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
+// dropEchoedTitle clears a title that only repeats name, which tools write
+// for videos they could not identify; the year and date go too when the name
+// has a year of its own. See docs/spec/metadata.md.
+func (m *Meta) dropEchoedTitle(name string, nameYear int) {
+	if m == nil || m.Title == "" || normalize(m.Title) != normalize(name) {
+		return
+	}
+	m.Title = ""
+	if nameYear != 0 {
+		m.Year, m.Date = 0, ""
+	}
+}
+
 // ReadNFO parses a .nfo file whose root must be kind.
 func ReadNFO(path, kind string) (*Meta, error) {
 	b, err := os.ReadFile(path)

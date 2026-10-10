@@ -3,8 +3,10 @@ package library
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -246,5 +248,76 @@ func TestScanNFO(t *testing.T) {
 		if it.Title == "Heat" && it.UpdatedAt != byTitle["Heat"].UpdatedAt {
 			t.Errorf("unchanged Heat was updated")
 		}
+	}
+}
+
+// TestScanEchoedNFO covers .nfo files from a tool that could not identify the
+// videos, as Jellyfin writes them: the title is the file name.
+func TestScanEchoedNFO(t *testing.T) {
+	root := t.TempDir()
+	movies, tv := filepath.Join(root, "movies"), filepath.Join(root, "tv")
+	jellyfin := func(title, year string) string {
+		return `<?xml version="1.0" encoding="utf-8" standalone="yes"?><movie><plot /><title>` + title +
+			`</title><year>` + year + `</year><premiered>` + year + `-01-01</premiered><genre>Horror</genre>` +
+			`<art><poster>C:\ProgramData\Jellyfin\Server\metadata\library\40\poster.jpg</poster></art></movie>`
+	}
+	coll := filepath.Join(movies, "Halloween Complete Collection")
+	for _, f := range []struct{ name, year string }{
+		{"01 Halloween - Horror 1978 Donald Pleasence Eng Subs 720p [H264-mp4]", "1978"},
+		{"10 Halloween II Rob Zombie - Horror 2009 Eng Subs 720p [H264-mp4]", "2009"},
+	} {
+		writeFile(t, filepath.Join(coll, f.name+".mp4"), "x")
+		writeFile(t, filepath.Join(coll, f.name+".nfo"), jellyfin(f.name, f.year))
+	}
+	// The tool's year is wrong; the name's wins.
+	jc := filepath.Join(movies, "Jeepers Creepers Collection", "03 Jeepers Creepers 3 - Horror 2017 Eng Spa Multi-Subs 720p [H264-mp4]")
+	writeFile(t, jc+".mp4", "x")
+	writeFile(t, jc+".nfo", jellyfin(filepath.Base(jc), "2003"))
+	writeFile(t, filepath.Join(movies, "Jeepers Creepers Collection", "01 Jeepers Creepers - Horror 2001 720p.mp4"), "x")
+	// Without a year in the name, the tool's year is kept.
+	writeFile(t, filepath.Join(movies, "Nosferatu.mkv"), "x")
+	writeFile(t, filepath.Join(movies, "Nosferatu.nfo"), `<movie><title>Nosferatu</title><year>1922</year></movie>`)
+	writeFile(t, filepath.Join(movies, "10 Cloverfield Lane (2016).mkv"), "x")
+	// Shows and episodes.
+	writeFile(t, filepath.Join(tv, "Lost (2004)", "Lost - S01E01 - Pilot 720p.mkv"), "x")
+	writeFile(t, filepath.Join(tv, "Lost (2004)", "Lost - S01E01 - Pilot 720p.nfo"), `<episodedetails><title>Lost - S01E01 - Pilot 720p</title></episodedetails>`)
+	writeFile(t, filepath.Join(tv, "Lost (2004)", "tvshow.nfo"), `<tvshow><title>Lost (2004)</title><year>1999</year><plot>Survivors.</plot></tvshow>`)
+
+	s, _ := Open("")
+	if err := s.SyncSections([]SectionDef{
+		{Title: "Movies", Type: TypeMovie, Paths: []string{movies}},
+		{Title: "TV", Type: TypeShow, Paths: []string{tv}},
+	}, t0); err != nil {
+		t.Fatal(err)
+	}
+	sc := NewScanner(s, &countingProber{}, nil)
+	for _, sec := range s.Sections() {
+		if _, err := sc.Scan(context.Background(), sec.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[string]Item{}
+	for _, it := range s.Items(s.Sections()[0].ID, TypeMovie) {
+		got[fmt.Sprintf("%s (%d)", it.Title, it.Year)] = it
+	}
+	for _, want := range []string{"Halloween (1978)", "Halloween II Rob Zombie (2009)", "Jeepers Creepers 3 (2017)",
+		"Jeepers Creepers (2001)", "Nosferatu (1922)", "10 Cloverfield Lane (2016)"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("no %q among %q", want, slices.Sorted(maps.Keys(got)))
+		}
+	}
+	if h := got["Halloween (1978)"]; h.Meta == nil || len(h.Meta.Genres) != 1 || h.Meta.Genres[0] != "Horror" || h.Aired != "" {
+		t.Errorf("Halloween lost the .nfo's other fields: %+v %+v", h, h.Meta)
+	}
+	if jc := got["Jeepers Creepers 3 (2017)"]; jc.Aired != "" {
+		t.Errorf("Jeepers Creepers 3 kept the tool's date %q", jc.Aired)
+	}
+
+	shows := s.Items(s.Sections()[1].ID, TypeShow)
+	if len(shows) != 1 || shows[0].Title != "Lost" || shows[0].Year != 2004 || shows[0].Meta.Summary != "Survivors." {
+		t.Fatalf("shows = %+v", shows)
+	}
+	if eps := s.Leaves(shows[0].ID); len(eps) != 1 || eps[0].Title != "Pilot" {
+		t.Errorf("episodes = %+v", eps)
 	}
 }

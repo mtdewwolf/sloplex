@@ -69,6 +69,19 @@ A `.nfo` file is XML whose root element is `movie`, `tvshow`, or
 | `actor` | `Role` | `name` becomes `tag` and `role` becomes `role`, in `order` (then file) order. Actors without a name are skipped |
 | `set`, or `set/name` | – | Movies: puts the movie in an automatic collection; see [collections.md](collections.md) |
 
+- **(sloplex)** A `title` that only repeats the video's file name, without
+  its extension, is ignored. For a show, the same applies to a title that
+  repeats the folder holding `tvshow.nfo`.
+  - Tools such as Jellyfin write that title for videos they could not
+    identify, for example
+    `<title>01 Halloween - Horror 1978 Eng Subs 720p [H264-mp4]</title>`.
+  - The comparison is exact, including case. `.` and `_` count as spaces
+    when the name has no spaces. A title that only changes case, such as
+    `LOST` for a folder named `lost`, is kept.
+  - When that name has its own year, the file's `year` and `premiered` are
+    ignored too, since they are the same tool's guess. The title and year
+    then come from the name, as if there were no `.nfo` title.
+  - The file's other fields still apply.
 - **(sloplex)** Each list keeps at most 50 values, without duplicates
   (compared without regard to case).
 - For an episode, `season` and `episode` in the file are ignored. Numbering

@@ -343,6 +343,25 @@ skips.
   - `Title (Year)`;
   - `Title.Year.1080p...`;
   - a parent directory named `Title (Year)` when the file name has no year.
+- **(sloplex)** A genre written just before the year or the release tags
+  is dropped: `Halloween - Horror 1978 720p` is "Halloween" (1978).
+  - The genre must follow ` - ` and be one of: Action, Adventure,
+    Animation, Biography, Comedy, Crime, Documentary, Drama, Family,
+    Fantasy, History, Horror, Music, Musical, Mystery, Romance, Sci-Fi,
+    Science Fiction, Sport, Thriller, War, or Western, in any case.
+- **(sloplex)** Collection numbering is dropped. This applies when at least
+  two movie files in the same folder have titles that start with a number,
+  and at least one of those numbers has a leading zero.
+  - The number may be followed by a space, `. `, `) ` or ` - `.
+  - Each of those titles loses its number:
+    `Halloween Complete Collection/01 Halloween - Horror 1978 720p.mp4` is
+    "Halloween" (1978), and `10 Halloween II - Horror 2009 720p.mp4` in the
+    same folder is "Halloween II" (2009).
+  - A title that is only a number keeps it.
+  - Titles that really start with a number are kept when nothing in the
+    folder is numbered with a leading zero, as with `10 Cloverfield Lane
+    (2016).mkv`, or `21 Jump Street (2012).mkv` next to
+    `22 Jump Street (2014).mkv`.
 - Files with the same title and year in one section become one item with
   several Media entries (versions).
 
