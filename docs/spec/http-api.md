@@ -19,6 +19,9 @@
   `listen`.
 - All endpoints except `/identity` require authentication; see
   [auth.md](auth.md).
+- An account may be limited to some libraries. Hidden sections and items are
+  left out of lists and return `404` everywhere else; see "Library access" in
+  [accounts.md](accounts.md).
 - CORS: every response carries `Access-Control-Allow-Origin: *`. `OPTIONS`
   preflights return `204` and allow the `X-Plex-*`, `Accept`,
   `Content-Type`, and `Range` request headers.

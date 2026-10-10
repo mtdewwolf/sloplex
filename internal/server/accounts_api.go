@@ -40,12 +40,35 @@ type accountView struct {
 	ID          int    `json:"id"`
 	Name        string `json:"name"`
 	Admin       bool   `json:"admin"`
+	Libraries   *[]int `json:"libraries"`
 	HasPassword bool   `json:"hasPassword"`
 	CreatedAt   int64  `json:"createdAt"`
 }
 
 func viewAccount(a accounts.Account) accountView {
-	return accountView{ID: a.ID, Name: a.Name, Admin: a.Admin, HasPassword: a.HasPassword(), CreatedAt: a.CreatedAt}
+	return accountView{ID: a.ID, Name: a.Name, Admin: a.Admin, Libraries: a.Libraries, HasPassword: a.HasPassword(), CreatedAt: a.CreatedAt}
+}
+
+// parseLibraries decodes a "libraries" field: absent (raw == nil) leaves
+// the setting alone, null means every library, and a list must name
+// existing sections.
+func (s *Server) parseLibraries(raw json.RawMessage) (set bool, libs *[]int, err error) {
+	if raw == nil {
+		return false, nil, nil
+	}
+	if string(raw) == "null" {
+		return true, nil, nil
+	}
+	var ids []int
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return false, nil, fmt.Errorf("libraries must be null or a list of section IDs")
+	}
+	for _, id := range ids {
+		if _, err := s.store.Section(id); err != nil {
+			return false, nil, fmt.Errorf("unknown library section %d", id)
+		}
+	}
+	return true, &ids, nil
 }
 
 type tokenView struct {
@@ -111,6 +134,18 @@ func (s *Server) caller(w http.ResponseWriter, r *http.Request) (accounts.Accoun
 	}
 	jsonError(w, http.StatusUnauthorized, "not authenticated")
 	return accounts.Account{}, principal{}, false
+}
+
+// visibility returns which library sections the request's account may see;
+// see "Library access" in docs/spec/accounts.md. Requests without an account
+// see nothing.
+func (s *Server) visibility(r *http.Request) func(sectionID int) bool {
+	if p, ok := principalOf(r); ok {
+		if a, err := s.accounts.Account(p.AccountID); err == nil {
+			return a.CanSee
+		}
+	}
+	return func(int) bool { return false }
 }
 
 // requireAdmin lets only admin accounts through.
@@ -269,17 +304,29 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name     string `json:"name"`
-		Password string `json:"password"`
-		Admin    bool   `json:"admin"`
+		Name      string          `json:"name"`
+		Password  string          `json:"password"`
+		Admin     bool            `json:"admin"`
+		Libraries json.RawMessage `json:"libraries"`
 	}
 	if !readJSON(w, r, &body) {
+		return
+	}
+	setLibs, libs, err := s.parseLibraries(body.Libraries)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	a, err := s.accounts.Create(body.Name, body.Password, body.Admin)
 	if err != nil {
 		s.storeError(w, err)
 		return
+	}
+	if setLibs {
+		if a, err = s.accounts.Update(a.ID, accounts.Update{SetLibraries: true, Libraries: libs}); err != nil {
+			s.storeError(w, err)
+			return
+		}
 	}
 	s.log.Info("account created", "user", a.Name, "admin", a.Admin)
 	writeJSON(w, http.StatusCreated, viewAccount(a))
@@ -291,14 +338,22 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name     *string `json:"name"`
-		Password *string `json:"password"`
-		Admin    *bool   `json:"admin"`
+		Name      *string         `json:"name"`
+		Password  *string         `json:"password"`
+		Admin     *bool           `json:"admin"`
+		Libraries json.RawMessage `json:"libraries"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
-	a, err := s.accounts.Update(id, accounts.Update{Name: body.Name, Password: body.Password, Admin: body.Admin})
+	setLibs, libs, err := s.parseLibraries(body.Libraries)
+	if err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	a, err := s.accounts.Update(id, accounts.Update{
+		Name: body.Name, Password: body.Password, Admin: body.Admin, SetLibraries: setLibs, Libraries: libs,
+	})
 	if err != nil {
 		s.storeError(w, err)
 		return

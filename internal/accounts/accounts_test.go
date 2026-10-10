@@ -155,3 +155,46 @@ func TestHashFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestLibraries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.json")
+	s, _ := Open(path)
+	kid, _ := s.Create("kid", "", false)
+	if !kid.CanSee(1) || !kid.CanSee(99) {
+		t.Error("unrestricted account cannot see everything")
+	}
+	ids := []int{3, 2, 3}
+	kid, err := s.Update(kid.ID, Update{SetLibraries: true, Libraries: &ids})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids[0] = 1 // the store must not alias the caller's slice
+	if !kid.CanSee(2) || !kid.CanSee(3) || kid.CanSee(1) || len(*kid.Libraries) != 2 {
+		t.Errorf("restricted = %v", *kid.Libraries)
+	}
+
+	s2, _ := Open(path)
+	got, _ := s2.Account(kid.ID)
+	if got.Libraries == nil || got.CanSee(1) || !got.CanSee(2) {
+		t.Errorf("after reload = %+v", got)
+	}
+	none := []int{}
+	got, _ = s2.Update(kid.ID, Update{SetLibraries: true, Libraries: &none})
+	if got.CanSee(2) || got.Libraries == nil {
+		t.Errorf("empty list should hide everything: %+v", got)
+	}
+	got.Admin = true
+	if !got.CanSee(2) {
+		t.Error("admins must see every library")
+	}
+	got, _ = s2.Update(kid.ID, Update{SetLibraries: true})
+	if got.Libraries != nil || !got.CanSee(2) {
+		t.Errorf("nil should restore all: %+v", got)
+	}
+	// Unrelated updates leave the restriction alone.
+	got, _ = s2.Update(kid.ID, Update{SetLibraries: true, Libraries: &[]int{5}})
+	got, _ = s2.Update(kid.ID, Update{Name: ptr("kiddo")})
+	if got.Libraries == nil || !got.CanSee(5) {
+		t.Errorf("rename dropped restriction: %+v", got)
+	}
+}

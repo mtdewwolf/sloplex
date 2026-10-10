@@ -87,7 +87,7 @@ func (s *Server) handleRecentlyAdded(w http.ResponseWriter, r *http.Request) {
 func (s *Server) item(w http.ResponseWriter, r *http.Request) (library.Item, bool) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err == nil {
-		if it, err := s.store.Item(id); err == nil {
+		if it, err := s.store.Item(id); err == nil && s.visibility(r)(it.SectionID) {
 			return it, true
 		}
 	}
@@ -147,6 +147,8 @@ func (s *Server) page(r *http.Request, mc *MediaContainer, items []library.Item,
 	start := pagingParam(r, "X-Plex-Container-Start", 0)
 	size := pagingParam(r, "X-Plex-Container-Size", defaultSize)
 	acct := s.account(r)
+	see := s.visibility(r)
+	items = slices.DeleteFunc(items, func(it library.Item) bool { return !see(it.SectionID) })
 	total := len(items)
 	paged := r.URL.Query().Has("X-Plex-Container-Start") || r.Header.Get("X-Plex-Container-Start") != "" ||
 		size >= 0 && size < total

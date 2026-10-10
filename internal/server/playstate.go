@@ -36,7 +36,7 @@ func (s *Server) playTarget(w http.ResponseWriter, r *http.Request) (library.Ite
 		return library.Item{}, false
 	}
 	it, err := s.store.Item(id)
-	if err != nil {
+	if err != nil || !s.visibility(r)(it.SectionID) {
 		http.NotFound(w, r)
 		return library.Item{}, false
 	}

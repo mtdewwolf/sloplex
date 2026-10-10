@@ -21,6 +21,7 @@ Sloplex is a standalone product:
 | GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`                    |
 | Local token auth, trusted CIDRs    | ✅                                       |
 | Multiple users                     | ✅ accounts, passwords, per-device tokens, per-user watch history |
+| Per-user library restrictions      | ✅ e.g. a kids account that sees only the kids library |
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
@@ -31,7 +32,6 @@ Sloplex is a standalone product:
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
 | Transcoding (HLS/DASH)             | ⏳                                       |
-| Per-user library restrictions      | ⏳                                       |
 
 ## Quick start
 
@@ -80,6 +80,10 @@ each account.
 - Only admins can refresh libraries or manage accounts.
 - For a device where typing a password is awkward, an admin can issue a token
   with `POST /sloplex/accounts/{id}/tokens`.
+- To limit an account to certain libraries, set `libraries` to their section
+  IDs, for example `"libraries": [3]`. Use `null` to allow every library.
+  Hidden libraries disappear from that account's lists and return 404
+  everywhere else, streaming and images included.
 
 The full API is in [docs/spec/accounts.md](docs/spec/accounts.md).
 

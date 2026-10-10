@@ -42,10 +42,19 @@ type Account struct {
 	Admin        bool   `json:"admin"`
 	PasswordHash string `json:"passwordHash,omitempty"`
 	CreatedAt    int64  `json:"createdAt"`
+	// Libraries restricts the account to these section IDs; nil means all.
+	// The slice is never modified in place, so copies may share it.
+	Libraries *[]int `json:"libraries,omitempty"`
 }
 
 // HasPassword reports whether the account can log in with a password.
 func (a Account) HasPassword() bool { return a.PasswordHash != "" }
+
+// CanSee reports whether the account may see a library section. Admins see
+// every section.
+func (a Account) CanSee(sectionID int) bool {
+	return a.Admin || a.Libraries == nil || slices.Contains(*a.Libraries, sectionID)
+}
 
 // Token is an issued access token. Only its hash is kept.
 type Token struct {
@@ -216,6 +225,10 @@ type Update struct {
 	Name     *string
 	Password *string
 	Admin    *bool
+	// SetLibraries replaces the library restriction with Libraries (nil for
+	// every library).
+	SetLibraries bool
+	Libraries    *[]int
 	// KeepToken is a token ID that survives a password change.
 	KeepToken int
 }
@@ -255,6 +268,18 @@ func (s *Store) Update(id int, u Update) (Account, error) {
 	}
 	if u.Admin != nil {
 		a.Admin = *u.Admin
+	}
+	if u.SetLibraries {
+		a.Libraries = nil
+		if u.Libraries != nil {
+			l := slices.Clone(*u.Libraries)
+			if l == nil {
+				l = []int{}
+			}
+			slices.Sort(l)
+			l = slices.Compact(l)
+			a.Libraries = &l
+		}
 	}
 	if u.Password != nil {
 		a.PasswordHash = hash

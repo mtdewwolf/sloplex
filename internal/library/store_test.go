@@ -120,9 +120,9 @@ func TestStorePersists(t *testing.T) {
 	if got.Title != want.Title || got.Media[0].Parts[0].File != "/m/a.mkv" || got.Media[0].Duration != 1000 {
 		t.Errorf("reloaded item = %+v, want %+v", got, want)
 	}
-	p, err := s2.Part(want.Media[0].Parts[0].ID)
-	if err != nil || p.File != "/m/a.mkv" {
-		t.Errorf("Part = %+v, %v", p, err)
+	p, secID, err := s2.Part(want.Media[0].Parts[0].ID)
+	if err != nil || p.File != "/m/a.mkv" || secID != sec {
+		t.Errorf("Part = %+v, section %d, %v", p, secID, err)
 	}
 
 	// New IDs must not collide with persisted ones.

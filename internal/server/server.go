@@ -136,8 +136,11 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSections(w http.ResponseWriter, r *http.Request) {
 	mc := MediaContainer{Title1: "Library Sections"}
+	see := s.visibility(r)
 	for _, sec := range s.store.Sections() {
-		mc.Directory = append(mc.Directory, s.sectionDirectory(sec))
+		if see(sec.ID) {
+			mc.Directory = append(mc.Directory, s.sectionDirectory(sec))
+		}
 	}
 	writeContainer(w, r, mc)
 }
@@ -172,7 +175,7 @@ func (s *Server) sectionDirectory(sec library.Section) Directory {
 func (s *Server) section(w http.ResponseWriter, r *http.Request) (library.Section, bool) {
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err == nil {
-		if sec, err := s.store.Section(id); err == nil {
+		if sec, err := s.store.Section(id); err == nil && s.visibility(r)(sec.ID) {
 			return sec, true
 		}
 	}
@@ -227,8 +230,8 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	part, err := s.store.Part(id)
-	if err != nil {
+	part, sectionID, err := s.store.Part(id)
+	if err != nil || !s.visibility(r)(sectionID) {
 		http.NotFound(w, r)
 		return
 	}

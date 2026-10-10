@@ -128,7 +128,7 @@ func (s *Server) handlePhotoTranscode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, err := s.store.Item(id)
-	if err != nil {
+	if err != nil || !s.visibility(r)(it.SectionID) {
 		http.NotFound(w, r)
 		return
 	}

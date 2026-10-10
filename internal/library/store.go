@@ -359,14 +359,14 @@ func (s *Store) Counts(id int) (children, leaves int) {
 	return len(s.children[id]), walk(id)
 }
 
-// Part returns the part with the given ID.
-func (s *Store) Part(id int) (Part, error) {
+// Part returns the part with the given ID and the section it belongs to.
+func (s *Store) Part(id int) (Part, int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if ref, ok := s.parts[id]; ok {
-		return *ref.part, nil
+		return *ref.part, ref.item.SectionID, nil
 	}
-	return Part{}, ErrNotFound
+	return Part{}, 0, ErrNotFound
 }
 
 // KnownFile returns the stored size, modification time and media info of a

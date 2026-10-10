@@ -21,6 +21,7 @@
 | `id`        | Integer, never reused                                              |
 | `name`      | Unique, case-insensitive; 1–32 of `A–Z a–z 0–9 . _ -`              |
 | `admin`     | Admins manage accounts and libraries                               |
+| `libraries` | `null` = every library; otherwise the list of library section IDs the account may see. See **Library access**. |
 | `createdAt` | Unix seconds                                                       |
 | password    | Optional. Stored only as PBKDF2-HMAC-SHA256: 16-byte salt, 600,000 iterations, 32-byte key. The iteration count is stored with the hash. |
 
@@ -58,6 +59,31 @@ Accounts and tokens are stored in `<dataDir>/accounts.json` with mode `0600`.
 Each account's play state is kept apart from every other account's; see
 [playstate.md](playstate.md).
 
+## Library access
+
+An account whose `libraries` is a list can only see the sections in that
+list. This applies everywhere:
+
+| Request                                                         | Behaviour for a hidden section or item |
+|-----------------------------------------------------------------|----------------------------------------|
+| `/library/sections`, `/library/recentlyAdded`, `/library/onDeck`, and every other list | Hidden sections and items are left out, and `size`/`totalSize` count only visible items |
+| Anything under `/library/sections/{id}`                         | `404`, as if the section did not exist |
+| `/library/metadata/{id}`, including `/children`, `/allLeaves`, and images | `404`                         |
+| `/library/parts/...` (streaming)                                | `404`                                  |
+| `/photo/:/transcode` of a hidden item's image                   | `404`                                  |
+| `/:/scrobble`, `/:/unscrobble`, `/:/progress`, `/:/timeline`    | `404`                                  |
+
+Rules:
+
+- Hidden items return the same `404` as missing items, so a restricted
+  account cannot tell whether hidden content exists.
+- Admins always see every library. `libraries` is stored for them but has no
+  effect.
+- An empty list (`[]`) hides every library.
+- A section removed from the config and later added back gets a new ID.
+  Accounts restricted to the old ID lose access to it, so the change fails
+  closed.
+
 ## Permissions
 
 | Action                                              | Who            |
@@ -87,7 +113,7 @@ Errors return `{"error": "<message>"}` with these statuses:
 An account object looks like:
 
 ```json
-{"id": 2, "name": "alice", "admin": false, "hasPassword": true, "createdAt": 1700000000}
+{"id": 2, "name": "alice", "admin": false, "libraries": null, "hasPassword": true, "createdAt": 1700000000}
 ```
 
 A token object looks like this. The `token` value appears only when the token
@@ -162,17 +188,22 @@ Returns `{"accounts": [...]}`, ordered by ID.
 Request:
 
 ```json
-{"name": "bob", "password": "…", "admin": false}
+{"name": "bob", "password": "…", "admin": false, "libraries": [2]}
 ```
 
 - `password` is optional. If given, it must be at least 8 characters.
+- `libraries` is optional and defaults to `null` (every library). An unknown
+  section ID returns `400`.
 - Returns `201` with the account.
 
 ### `PATCH /sloplex/accounts/{id}` (admin)
 
-Request: any of `{"name": "…", "password": "…", "admin": true}`.
+Request: any of
+`{"name": "…", "password": "…", "admin": true, "libraries": [1, 2] | null}`.
 
 - Setting `password` revokes all of that account's tokens.
+- Sending `"libraries": null` restores access to every library. Leaving the
+  field out keeps the current setting. An unknown section ID returns `400`.
 - Changing `admin` on the owner returns `400`.
 - Returns the updated account.
 
