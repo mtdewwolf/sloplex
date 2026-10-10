@@ -68,6 +68,9 @@ type Plan struct {
 	ToneMap bool
 	// WebM is set for VP9/Opus output.
 	WebM bool
+	// Preset is the libx264 preset for the software pipeline; empty means
+	// DefaultPreset. The Manager sets it; see "CPU transcoding".
+	Preset string
 }
 
 // Decide applies the decision rules.
@@ -214,8 +217,9 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 	if encode {
 		chain := videoFilter(r, p, pl)
 		tone := ""
+		preW, preH, preScaled := toneMapSize(r, p)
 		if p.ToneMap {
-			tone = toneMapFilter(r.Source.HDR)
+			tone = toneMapFilter(r.Source.HDR, preW, preH)
 		}
 		switch {
 		case r.Burn != nil && r.Burn.File != "":
@@ -228,12 +232,18 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 			}
 			args = append(args, "-vf", joinFilters(tone, f, chain))
 		case r.Burn != nil:
-			src := "[0:v:0]"
+			src, sub := "[0:v:0]", fmt.Sprintf("[0:%d]", r.Burn.Index)
 			graph := ""
 			if tone != "" {
 				graph, src = "[0:v:0]"+tone+"[sdr];", "[sdr]"
 			}
-			graph += joinFilters(fmt.Sprintf("%s[0:%d]overlay=eof_action=pass", src, r.Burn.Index), chain) + "[vout]"
+			if preScaled {
+				// The picture is already at the output size; scale the
+				// subtitle canvas by the same factor.
+				graph += fmt.Sprintf("%sscale=%d:%d[sub];", sub, preW, preH)
+				sub = "[sub]"
+			}
+			graph += joinFilters(src+sub+"overlay=eof_action=pass", chain) + "[vout]"
 			args = append(args, "-filter_complex", graph)
 			videoMap = "[vout]"
 		default:
@@ -313,14 +323,33 @@ func joinFilters(parts ...string) string {
 	return strings.Join(out, ",")
 }
 
+// toneMapSize is the size tone mapping should scale to first: the planned
+// output size when that is smaller than the source. Tone mapping costs per
+// pixel, so working at the output size saves most of it.
+func toneMapSize(r Request, p Plan) (w, h int, ok bool) {
+	src := r.Source
+	if !p.ToneMap || p.Width <= 0 || p.Height <= 0 || src.Width <= 0 || src.Height <= 0 {
+		return 0, 0, false
+	}
+	if p.Width >= src.Width && p.Height >= src.Height {
+		return 0, 0, false
+	}
+	return p.Width, p.Height, true
+}
+
 // toneMapFilter converts an HDR source (probe.HDRPQ or HDRHLG) to 8-bit
-// BT.709 SDR; see "HDR tone mapping" in docs/spec/transcode.md.
-func toneMapFilter(hdr string) string {
+// BT.709 SDR, first scaling to w×h when both are set; see "HDR tone
+// mapping" in docs/spec/transcode.md.
+func toneMapFilter(hdr string, w, h int) string {
 	tin := "smpte2084"
 	if hdr == probe.HDRHLG {
 		tin = "arib-std-b67"
 	}
-	return "zscale=tin=" + tin + ":min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100," +
+	pre := ""
+	if w > 0 && h > 0 {
+		pre = fmt.Sprintf("zscale=w=%d:h=%d:filter=bicubic,", w, h)
+	}
+	return pre + "zscale=tin=" + tin + ":min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100," +
 		"format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0," +
 		"zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 }
@@ -404,7 +433,11 @@ func rateControl(r Request, p Plan, pl Pipeline) []string {
 	}
 	switch pl.Accel {
 	case "":
-		out := []string{"-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"}
+		preset := p.Preset
+		if preset == "" {
+			preset = DefaultPreset
+		}
+		out := []string{"-preset", preset, "-crf", "21", "-pix_fmt", "yuv420p"}
 		if r.MaxBitrate > 0 {
 			out = append(out, capArgs()...)
 		}

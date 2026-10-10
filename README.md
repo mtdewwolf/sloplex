@@ -37,6 +37,7 @@ Sloplex is a standalone product:
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
+| CPU-only transcoding               | ✅ tone mapping at output size, benchmark-driven adaptive x264 preset, HLS throttling |
 | Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in, WebVTT renditions in HLS |
 
 ## Quick start
@@ -200,6 +201,31 @@ GPU access in containers:
 
 Set `"hwaccel": "none"` to always use software.
 
+### CPU-only transcoding
+
+Without a GPU, Sloplex does three things to keep playback smooth:
+
+- **HDR tone mapping at the output size.** When downscaling, the picture
+  is resized before the expensive tone-mapping math. Savings depend on
+  the source, output size, and machine.
+- **Adaptive x264 preset.** With `"x264Preset": "auto"` (the default),
+  Sloplex measures libx264 at startup. Each transcode then gets the
+  best-quality preset predicted to fit the CPU budget, given everything
+  else that is transcoding. This is an estimate, not a playback guarantee.
+  - An idle server uses `faster` when the estimated load fits.
+  - A busy server, or a heavy source such as 4K HEVC HDR, moves down
+    through `veryfast` and `superfast` to `ultrafast`.
+  - Set a preset name to use that preset always.
+- **Throttling.** An HLS transcode that gets more than 90 s ahead of the
+  player is paused until the lead falls to 45 s. This leaves the CPU free
+  for other streams.
+
+A preset-matched synthetic 4K-to-1080p benchmark on the integration
+machine took 5.586 s before output-size tone mapping and 1.673 s after
+(3.34× faster). This does not include HEVC decoding or establish real-media
+playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
+"CPU transcoding" in [docs/spec/transcode.md](docs/spec/transcode.md).
+
 ## Configuration
 
 | Key               | Default        | Meaning                                                   |
@@ -217,6 +243,8 @@ Set `"hwaccel": "none"` to always use software.
 | `hwaccelDevice`   | `/dev/dri/renderD128` | GPU render node for `vaapi` and `qsv`              |
 | `watch`           | `true`         | Rescan a library when its folders change (Linux)          |
 | `scanInterval`    | `"1h"`         | Rescan every library this often (at least `1m`); `"0"` turns it off |
+| `x264Preset`      | `"auto"`       | `auto`, or one of `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` |
+| `transcodeThrottle` | `true`       | Pause HLS transcodes that are far ahead of the player     |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout
