@@ -108,6 +108,7 @@ function posterURL(thumb, w = 300, h = 450) {
 
 function fmtDuration(ms) {
   if (!ms) return "";
+  if (ms < 60000) return `${Math.round(ms / 1000)} s`;
   const m = Math.round(ms / 60000);
   return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
 }
@@ -256,27 +257,65 @@ async function viewItem(id) {
   }
   add("Year", item.year && String(item.year));
   add("Duration", fmtDuration(item.duration));
-  if (media) add("Video", [media.videoResolution && media.videoResolution + "p", media.videoCodec, media.container].filter(Boolean).join(" · "));
+  const res = { sd: "SD", "4k": "4K" }[media && media.videoResolution] || (media && media.videoResolution ? media.videoResolution + "p" : "");
+  if (media) add("Video", [res, media.videoCodec, media.container].filter(Boolean).join(" · "));
   add("Last watched", fmtDate(item.lastViewedAt));
   if (part) add("File", part.file);
 
   const player = el("div");
   const art = item.type === "episode" ? item.grandparentThumb || item.thumb : item.thumb;
+  const tracks = part ? trackPickers(part, () => restartPlayer()) : null;
+  let active = null; // the running player, if any
+  const restartPlayer = () => {
+    if (active) active = play(player, item, part, tracks.choice(), active.position());
+  };
   render(
     el("div", { class: "detail" },
       el("div", { class: "art" }, art ? el("img", { src: posterURL(art), alt: "" }) : null),
       el("div", {},
         el("h1", { text: item.title }),
         el("dl", {}, facts),
+        tracks ? tracks.node : null,
         el("div", { class: "row" },
           part ? el("button", {
             class: "primary",
             type: "button",
             text: item.viewOffset > 0 ? `Resume from ${fmtClock(item.viewOffset)}` : "Play",
-            onclick: () => play(player, item, part),
+            onclick: () => { active = play(player, item, part, tracks.choice(), (item.viewOffset || 0) / 1000); },
           }) : null,
           watchButtons(item, () => viewItem(id))),
         player)));
+}
+
+// trackPickers builds the audio and subtitle selects of a part (see
+// docs/spec/streams.md). Changes are saved as the account's choice.
+function trackPickers(part, onChange) {
+  const streams = part.Stream || [];
+  const audio = streams.filter((s) => s.streamType === 2);
+  const subs = streams.filter((s) => s.streamType === 3);
+  const option = (s) => el("option", { value: s.id, selected: !!s.selected, text: s.extendedDisplayTitle });
+  const audioSel = el("select", { "aria-label": "Audio" }, audio.map(option));
+  const subSel = el("select", { "aria-label": "Subtitles" },
+    el("option", { value: 0, text: "No subtitles", selected: !subs.some((s) => s.selected) }), subs.map(option));
+  const save = async () => {
+    const q = new URLSearchParams({ subtitleStreamID: subSel.value });
+    if (audioSel.value) q.set("audioStreamID", audioSel.value);
+    await api("PUT", `/library/parts/${part.id}?${q}`).catch(fail);
+    onChange();
+  };
+  audioSel.addEventListener("change", save);
+  subSel.addEventListener("change", save);
+  const show = audio.length > 1 || subs.length > 0;
+  return {
+    node: show ? el("div", { class: "row tracks" },
+      audio.length > 1 ? el("label", {}, "Audio ", audioSel) : null,
+      el("label", {}, "Subtitles ", subSel)) : null,
+    choice: () => ({
+      audio: audio.find((s) => String(s.id) === audioSel.value) || null,
+      firstAudio: audio[0] || null,
+      sub: subs.find((s) => String(s.id) === subSel.value) || null,
+    }),
+  };
 }
 
 function watchButtons(item, refresh) {
@@ -293,12 +332,19 @@ function watchButtons(item, refresh) {
   ];
 }
 
-// play direct-plays a part and falls back to a transcoded MP4 stream (see
-// docs/spec/transcode.md) when the browser cannot decode it. In transcoded
-// mode the stream starts at `base` seconds, so positions add it back and
-// seeking restarts the stream.
-function play(holder, item, part) {
+// play starts a part at `startAt` seconds and returns a handle with the
+// current position. It direct-plays when the browser can show the chosen
+// tracks, and otherwise uses a transcoded MP4 stream (see
+// docs/spec/transcode.md and streams.md):
+// - a non-first audio track or an image subtitle needs a transcode;
+// - text subtitles are a WebVTT <track>, shifted to match a transcode.
+// In transcoded mode the stream starts at `base` seconds, so positions add it
+// back and seeking restarts the stream.
+function play(holder, item, part, choice, startAt = 0) {
   const video = el("video", { controls: true, autoplay: true, preload: "metadata" });
+  const textSub = choice.sub && choice.sub.key ? choice.sub : null;
+  const needsTranscode = (choice.audio && choice.firstAudio && choice.audio.id !== choice.firstAudio.id) ||
+    (choice.sub && !choice.sub.key);
   let transcoding = false;
   let restarting = false;
   let base = 0;
@@ -311,17 +357,30 @@ function play(holder, item, part) {
     const q = new URLSearchParams({ ratingKey: item.ratingKey, key: item.key, state: st, time: t, duration: durationMs() });
     api("GET", "/:/timeline?" + q).catch(() => {});
   };
+  const setTrack = () => {
+    video.querySelectorAll("track").forEach((t) => t.remove());
+    if (!textSub) return;
+    const q = new URLSearchParams({ format: "vtt" });
+    if (transcoding && base > 0) q.set("offset", base.toFixed(3));
+    const track = el("track", { kind: "subtitles", default: true, label: textSub.displayTitle,
+      srclang: textSub.languageCode || "und", src: withToken(textSub.key + "?" + q) });
+    video.append(track);
+    track.track.mode = "showing";
+  };
   const startTranscode = (at) => {
     transcoding = true;
     restarting = true;
     base = Math.max(0, at);
-    const q = new URLSearchParams({ path: item.key, offset: base.toFixed(1) });
+    const q = new URLSearchParams({ path: item.key, offset: base.toFixed(1), subtitles: "auto" });
+    if (choice.audio) q.set("audioStreamID", choice.audio.id);
+    q.set("subtitleStreamID", choice.sub ? choice.sub.id : 0);
     video.src = withToken("/video/:/transcode/universal/start.mp4?" + q);
+    setTrack();
     video.play().catch(() => {});
   };
 
   video.addEventListener("loadedmetadata", () => {
-    if (!transcoding && item.viewOffset > 0) video.currentTime = item.viewOffset / 1000;
+    if (!transcoding && startAt > 0) video.currentTime = startAt;
     restarting = false;
   });
   video.addEventListener("seeking", () => {
@@ -341,15 +400,20 @@ function play(holder, item, part) {
       return;
     }
     if (!transcoding) {
-      const resumeAt = video.currentTime > 0 ? video.currentTime : (item.viewOffset || 0) / 1000;
       toast("Converting this file for your browser…");
-      startTranscode(resumeAt);
+      startTranscode(video.currentTime > 0 ? video.currentTime : startAt);
       return;
     }
     holder.replaceChildren(el("p", { class: "error", text: "This file could not be played, even after converting it." }));
   });
-  video.src = withToken(part.key);
   holder.replaceChildren(video);
+  if (needsTranscode) {
+    startTranscode(startAt);
+  } else {
+    video.src = withToken(part.key);
+    setTrack();
+  }
+  return { position };
 }
 
 async function viewSearch(query) {

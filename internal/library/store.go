@@ -94,6 +94,17 @@ type Part struct {
 	ModTime   int64  `json:"modTime"`
 	Duration  int64  `json:"duration,omitempty"`
 	Container string `json:"container,omitempty"`
+	// Streams are the file's embedded streams followed by its sidecar
+	// subtitles; see docs/spec/streams.md.
+	Streams []Stream `json:"streams,omitempty"`
+}
+
+// Stream is an embedded stream or a sidecar subtitle of a part.
+type Stream struct {
+	ID int `json:"id"`
+	probe.Stream
+	// File is the sidecar subtitle path; empty for embedded streams.
+	File string `json:"file,omitempty"`
 }
 
 // SectionDef is the configured shape of a section.
@@ -117,6 +128,8 @@ type ScannedFile struct {
 	Season   int
 	Episode  int
 	Info     probe.Info
+	// Sidecars are subtitle files next to the video (ID unset).
+	Sidecars []Stream
 	// Changed is set when the file is new or was modified since the last scan.
 	Changed bool
 }
@@ -137,6 +150,7 @@ type storeData struct {
 	NextItemID    int        `json:"nextItemId"`
 	NextMediaID   int        `json:"nextMediaId"`
 	NextPartID    int        `json:"nextPartId"`
+	NextStreamID  int        `json:"nextStreamId,omitempty"`
 	Sections      []*Section `json:"sections"`
 	Items         []*Item    `json:"items"`
 }
@@ -160,6 +174,12 @@ type Store struct {
 	children map[int][]*Item // ordered by Index, then ID
 	parts    map[int]fileRef
 	files    map[fileKey]fileRef
+	streams  map[int]streamRef
+}
+
+type streamRef struct {
+	fileRef
+	stream *Stream
 }
 
 type fileKey struct {
@@ -194,6 +214,7 @@ func (s *Store) reindexLocked() {
 	s.children = map[int][]*Item{}
 	s.parts = map[int]fileRef{}
 	s.files = map[fileKey]fileRef{}
+	s.streams = map[int]streamRef{}
 	for _, it := range s.d.Items {
 		s.byID[it.ID] = it
 		if it.ParentID != 0 {
@@ -205,6 +226,9 @@ func (s *Store) reindexLocked() {
 				ref := fileRef{it, m, &m.Parts[pi]}
 				s.parts[ref.part.ID] = ref
 				s.files[fileKey{it.SectionID, ref.part.File}] = ref
+				for si := range ref.part.Streams {
+					s.streams[ref.part.Streams[si].ID] = streamRef{ref, &ref.part.Streams[si]}
+				}
 			}
 		}
 	}
@@ -364,7 +388,9 @@ func (s *Store) Part(id int) (Part, int, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if ref, ok := s.parts[id]; ok {
-		return *ref.part, ref.item.SectionID, nil
+		p := *ref.part
+		p.Streams = slices.Clone(p.Streams)
+		return p, ref.item.SectionID, nil
 	}
 	return Part{}, 0, ErrNotFound
 }
@@ -374,10 +400,30 @@ func (s *Store) Part(id int) (Part, int, error) {
 func (s *Store) KnownFile(sectionID int, path string) (size, modTime int64, info probe.Info, ok bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if ref, ok := s.files[fileKey{sectionID, path}]; ok {
-		return ref.part.Size, ref.part.ModTime, ref.media.Info, true
+	ref, ok := s.files[fileKey{sectionID, path}]
+	if !ok {
+		return 0, 0, probe.Info{}, false
 	}
-	return 0, 0, probe.Info{}, false
+	info = ref.media.Info
+	info.Streams = nil
+	for _, st := range ref.part.Streams {
+		if st.File == "" {
+			info.Streams = append(info.Streams, st.Stream)
+		}
+	}
+	return ref.part.Size, ref.part.ModTime, info, true
+}
+
+// Stream returns a stream by ID with its part and section.
+func (s *Store) Stream(id int) (Stream, Part, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if ref, ok := s.streams[id]; ok {
+		p := *ref.part
+		p.Streams = slices.Clone(p.Streams)
+		return *ref.stream, p, ref.item.SectionID, nil
+	}
+	return Stream{}, Part{}, 0, ErrNotFound
 }
 
 // SetImages replaces the artwork of every item in a section. Items missing
@@ -443,6 +489,9 @@ func (it *Item) clone() Item {
 		c.Media = make([]Media, len(it.Media))
 		for i, m := range it.Media {
 			m.Parts = slices.Clone(m.Parts)
+			for j := range m.Parts {
+				m.Parts[j].Streams = slices.Clone(m.Parts[j].Streams)
+			}
 			c.Media[i] = m
 		}
 	}

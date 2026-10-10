@@ -27,6 +27,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 	"github.com/mtdewwolf/sloplex/internal/server"
+	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
@@ -140,7 +141,8 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Accounts: accts, Transcoder: tc, Log: log})
+	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Accounts: accts, Transcoder: tc,
+		Subtitles: subtitles.New(ffmpeg, filepath.Join(cfg.DataDir, "cache", "subs")), Log: log})
 
 	started := time.Now().Unix()
 	if cfg.Discovery {

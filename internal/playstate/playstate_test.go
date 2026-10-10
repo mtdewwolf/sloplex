@@ -55,3 +55,23 @@ func TestDeleteAccount(t *testing.T) {
 		t.Errorf("after delete: account 2 = %v, account 1 = %+v", s.All(2), s.Get(1, 10))
 	}
 }
+
+func TestSelections(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ps.json")
+	s, _ := Open(path)
+	if err := s.SetSelection(1, 7, func(sel *Selection) { sel.Audio = 3; sel.Subtitle = NoSubtitle }); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.SetSelection(2, 7, func(sel *Selection) { sel.Subtitle = 9 })
+	s2, _ := Open(path)
+	if got := s2.Selection(1, 7); got != (Selection{Audio: 3, Subtitle: NoSubtitle}) {
+		t.Errorf("selection = %+v", got)
+	}
+	if got := s2.Selection(2, 7); got.Subtitle != 9 || got.Audio != 0 {
+		t.Errorf("account 2 = %+v", got)
+	}
+	_ = s2.DeleteAccount(2)
+	if got := s2.Selection(2, 7); got != (Selection{}) {
+		t.Errorf("after delete = %+v", got)
+	}
+}

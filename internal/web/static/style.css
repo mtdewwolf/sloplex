@@ -143,3 +143,7 @@ th { color: var(--muted); font-weight: 600; font-size: 13px; }
   .detail .art { max-width: 220px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; }
 }
+
+.tracks { margin: 4px 0 12px; }
+.tracks label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.tracks select { max-width: 320px; }

@@ -25,7 +25,19 @@ const version = 1
 type data struct {
 	Version  int                   `json:"version"`
 	Accounts map[int]map[int]State `json:"accounts"`
+	// Selections holds stream choices per account and part.
+	Selections map[int]map[int]Selection `json:"selections,omitempty"`
 }
+
+// Selection is an account's stream choice for one part. Zero fields mean
+// "no choice"; Subtitle is -1 for an explicit "no subtitles".
+type Selection struct {
+	Audio    int `json:"audio,omitempty"`
+	Subtitle int `json:"subtitle,omitempty"`
+}
+
+// NoSubtitle marks an explicit choice of no subtitles.
+const NoSubtitle = -1
 
 // Store holds play state in memory and saves it as JSON after every change.
 // It is safe for concurrent use.
@@ -56,6 +68,9 @@ func Open(path string) (*Store, error) {
 	if s.d.Accounts == nil {
 		s.d.Accounts = map[int]map[int]State{}
 	}
+	if s.d.Selections == nil {
+		s.d.Selections = map[int]map[int]Selection{}
+	}
 	return s, nil
 }
 
@@ -82,6 +97,33 @@ func (s *Store) DeleteAccount(account int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.d.Accounts, account)
+	delete(s.d.Selections, account)
+	return s.saveLocked()
+}
+
+// Selection returns an account's stream choice for a part.
+func (s *Store) Selection(account, part int) Selection {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.d.Selections[account][part]
+}
+
+// SetSelection applies fn to an account's stream choice for a part.
+func (s *Store) SetSelection(account, part int, fn func(*Selection)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.d.Selections[account]
+	if m == nil {
+		m = map[int]Selection{}
+		s.d.Selections[account] = m
+	}
+	sel := m[part]
+	fn(&sel)
+	if sel == (Selection{}) {
+		delete(m, part)
+	} else {
+		m[part] = sel
+	}
 	return s.saveLocked()
 }
 

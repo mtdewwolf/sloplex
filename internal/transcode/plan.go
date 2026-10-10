@@ -4,7 +4,9 @@ package transcode
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/mtdewwolf/sloplex/internal/probe"
 )
@@ -23,7 +25,27 @@ type Request struct {
 	MaxBitrate int
 	// NoDirectStream forces video encoding even when copying would do.
 	NoDirectStream bool
+	// SelectAudio uses the audio stream with ffprobe index AudioIndex
+	// instead of the first one. Source's audio fields should describe it.
+	SelectAudio bool
+	AudioIndex  int
+	// Burn renders a subtitle into the video.
+	Burn *Burn
 }
+
+// Burn describes a subtitle to burn in; see docs/spec/streams.md.
+type Burn struct {
+	// File is a text subtitle file (srt, ass, ssa, vtt) rendered with
+	// libass. It is copied into the working directory as BurnFile(File).
+	File string
+	// Index is the ffprobe index of an image subtitle stream to overlay,
+	// used when File is empty.
+	Index int
+}
+
+// BurnFile is the working-directory name a text subtitle is copied to, so
+// filter arguments never contain user paths.
+func BurnFile(src string) string { return "burn" + strings.ToLower(filepath.Ext(src)) }
 
 // Plan is the decision for a request.
 type Plan struct {
@@ -35,6 +57,8 @@ type Plan struct {
 	Width, Height int
 	// Bandwidth is an estimate in bits per second for playlists.
 	Bandwidth int
+	// Burn is set when a subtitle is burned in.
+	Burn bool
 }
 
 // Decide applies the decision rules.
@@ -45,7 +69,8 @@ func Decide(r Request) Plan {
 
 	fits := (r.MaxWidth == 0 || src.Width <= r.MaxWidth) && (r.MaxHeight == 0 || src.Height <= r.MaxHeight)
 	withinRate := r.MaxBitrate == 0 || (src.Bitrate > 0 && src.Bitrate <= r.MaxBitrate)
-	p.CopyVideo = src.VideoCodec == "h264" && fits && withinRate && !r.NoDirectStream
+	p.Burn = r.Burn != nil
+	p.CopyVideo = src.VideoCodec == "h264" && fits && withinRate && !r.NoDirectStream && !p.Burn
 
 	p.Width, p.Height = src.Width, src.Height
 	if !p.CopyVideo {
@@ -144,10 +169,15 @@ func Pipelines(hw HW, p Plan) []Pipeline {
 		return []Pipeline{{}}
 	}
 	full := Pipeline{Accel: hw.Accel, Device: hw.Device, Full: true}
+	encodeOnly := Pipeline{Accel: hw.Accel, Device: hw.Device}
+	if p.Burn {
+		// Burning in needs frames in system memory.
+		return []Pipeline{encodeOnly, {}}
+	}
 	if hw.Accel == AccelVideoToolbox {
 		return []Pipeline{full, {}}
 	}
-	return []Pipeline{full, {Accel: hw.Accel, Device: hw.Device}, {}}
+	return []Pipeline{full, encodeOnly, {}}
 }
 
 // Args builds the ffmpeg arguments for a request, plan and pipeline.
@@ -163,14 +193,44 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 	if r.InputFormat != "" {
 		args = append(args, "-f", r.InputFormat)
 	}
-	args = append(args, "-i", r.Input, "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn")
+	args = append(args, "-i", r.Input)
+
+	videoMap := "0:v:0"
+	if encode {
+		chain := videoFilter(r, p, pl)
+		join := func(a, b string) string {
+			if b == "" {
+				return a
+			}
+			return a + "," + b
+		}
+		switch {
+		case r.Burn != nil && r.Burn.File != "":
+			f := "subtitles=filename=" + BurnFile(r.Burn.File)
+			if r.Offset > 0 {
+				// Input seeking restarts timestamps at 0; render subtitles
+				// at source time, then restore.
+				off := strconv.FormatFloat(r.Offset, 'f', 3, 64)
+				f = "setpts=PTS+" + off + "/TB," + f + ",setpts=PTS-STARTPTS"
+			}
+			args = append(args, "-vf", join(f, chain))
+		case r.Burn != nil:
+			args = append(args, "-filter_complex",
+				join(fmt.Sprintf("[0:v:0][0:%d]overlay=eof_action=pass", r.Burn.Index), chain)+"[vout]")
+			videoMap = "[vout]"
+		case chain != "":
+			args = append(args, "-vf", chain)
+		}
+	}
+	audioMap := "0:a:0?"
+	if r.SelectAudio {
+		audioMap = fmt.Sprintf("0:%d", r.AudioIndex)
+	}
+	args = append(args, "-map", videoMap, "-map", audioMap, "-sn", "-dn")
 
 	if !encode {
 		args = append(args, "-c:v", "copy")
 	} else {
-		if vf := videoFilter(r, p, pl); vf != "" {
-			args = append(args, "-vf", vf)
-		}
 		args = append(args, "-c:v", Encoder(pl.Accel))
 		args = append(args, rateControl(r, p, pl)...)
 		if out.HLSDir != "" {

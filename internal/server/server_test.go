@@ -19,6 +19,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/probe"
+	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
@@ -88,7 +89,8 @@ func startServer(t *testing.T, opts Options, store *library.Store, sc *library.S
 		t.Fatal(err)
 	}
 	t.Cleanup(tc.Close)
-	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art, Accounts: accts, Transcoder: tc}).Handler())
+	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art, Accounts: accts, Transcoder: tc,
+		Subtitles: subtitles.New(ffmpeg, filepath.Join(t.TempDir(), "subs"))}).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }

@@ -118,6 +118,7 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 	}
 
 	var files []ScannedFile
+	dirs := dirCache{}
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -148,6 +149,7 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 			return nil
 		}
 		if f, ok := sc.scanFile(ctx, sec, root, path, info); ok {
+			f.Sidecars = findSidecars(dirs, path)
 			files = append(files, f)
 		}
 		return nil
@@ -177,8 +179,13 @@ func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string,
 	}
 
 	if size, mod, info, known := sc.store.KnownFile(sec.ID, path); known && size == f.Size && mod == f.ModTime {
-		f.Info = info
-		return f, true
+		// Files probed by an older version are probed again once, unless
+		// there is no real prober to do it.
+		_, noProber := sc.prober.(probe.None)
+		if info.ProbeVersion >= probe.Version || noProber {
+			f.Info = info
+			return f, true
+		}
 	}
 	f.Changed = true
 	info, err := sc.prober.Probe(ctx, path)

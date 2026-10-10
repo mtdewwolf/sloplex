@@ -207,7 +207,12 @@ func (m *Manager) runHLS(ctx context.Context, s *Session, r Request, attempts []
 	defer close(s.done)
 	for i, pl := range attempts {
 		s.pipeline.Store(&pl)
+		if err := prepareBurn(r, s.dir); err != nil {
+			s.err = err
+			return
+		}
 		cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, s.Plan, Output{HLSDir: s.dir}, pl)...)
+		cmd.Dir = s.dir
 		var stderr bytes.Buffer
 		cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
 		err := cmd.Run()
@@ -228,6 +233,19 @@ func (m *Manager) runHLS(ctx context.Context, s *Session, r Request, attempts []
 
 func ffmpegError(err error, stderr *bytes.Buffer) error {
 	return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(stderr.String()))
+}
+
+// prepareBurn copies a text subtitle to be burned in into the working
+// directory under its fixed name.
+func prepareBurn(r Request, dir string) error {
+	if r.Burn == nil || r.Burn.File == "" {
+		return nil
+	}
+	b, err := os.ReadFile(r.Burn.File)
+	if err != nil {
+		return fmt.Errorf("subtitle for burn-in: %w", err)
+	}
+	return os.WriteFile(filepath.Join(dir, BurnFile(r.Burn.File)), b, 0o644)
 }
 
 func hasSegments(dir string) bool {
@@ -458,6 +476,21 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 		m.mu.Unlock()
 	}()
 
+	workdir := ""
+	if r.Burn != nil && r.Burn.File != "" {
+		if err := os.MkdirAll(m.dir, 0o755); err != nil {
+			return err
+		}
+		dir, err := os.MkdirTemp(m.dir, "stream-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		if err := prepareBurn(r, dir); err != nil {
+			return err
+		}
+		workdir = dir
+	}
 	attempts := Pipelines(m.hw, p)
 	m.log.Info("transcode started", "session", st.id, "item", itemID, "protocol", "http",
 		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String())
@@ -465,7 +498,7 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 		m.mu.Lock()
 		st.pipeline = pl
 		m.mu.Unlock()
-		wrote, err := m.streamOnce(ctx, r, p, pl, w, func() { ready(p) })
+		wrote, err := m.streamOnce(ctx, r, p, pl, workdir, w, func() { ready(p) })
 		if err == nil || wrote || ctx.Err() != nil || i == len(attempts)-1 {
 			return err
 		}
@@ -478,10 +511,11 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 // streamOnce runs one pipeline. wrote reports whether any output reached
 // w; ready is called just before the first write. A client disconnect is
 // not an error.
-func (m *Manager) streamOnce(ctx context.Context, r Request, p Plan, pl Pipeline, w io.Writer, ready func()) (wrote bool, err error) {
+func (m *Manager) streamOnce(ctx context.Context, r Request, p Plan, pl Pipeline, workdir string, w io.Writer, ready func()) (wrote bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, p, Output{}, pl)...)
+	cmd.Dir = workdir
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
 	stdout, err := cmd.StdoutPipe()

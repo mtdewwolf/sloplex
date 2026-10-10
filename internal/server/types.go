@@ -185,6 +185,30 @@ type Part struct {
 	File      string `xml:"file,attr" json:"file"`
 	Size      int64  `xml:"size,attr" json:"size"`
 	Container string `xml:"container,attr,omitempty" json:"container,omitempty"`
+	// Stream is only included in item detail; see docs/spec/streams.md.
+	Stream []StreamElem `xml:"Stream" json:"Stream,omitempty"`
+}
+
+// StreamElem is a video, audio or subtitle stream of a part.
+type StreamElem struct {
+	ID                   int    `xml:"id,attr" json:"id"`
+	StreamType           int    `xml:"streamType,attr" json:"streamType"`
+	Codec                string `xml:"codec,attr" json:"codec"`
+	Index                *int   `xml:"index,attr,omitempty" json:"index,omitempty"`
+	Language             string `xml:"language,attr,omitempty" json:"language,omitempty"`
+	LanguageCode         string `xml:"languageCode,attr,omitempty" json:"languageCode,omitempty"`
+	Title                string `xml:"title,attr,omitempty" json:"title,omitempty"`
+	DisplayTitle         string `xml:"displayTitle,attr" json:"displayTitle"`
+	ExtendedDisplayTitle string `xml:"extendedDisplayTitle,attr" json:"extendedDisplayTitle"`
+	Channels             int    `xml:"channels,attr,omitempty" json:"channels,omitempty"`
+	AudioChannelLayout   string `xml:"audioChannelLayout,attr,omitempty" json:"audioChannelLayout,omitempty"`
+	Width                int    `xml:"width,attr,omitempty" json:"width,omitempty"`
+	Height               int    `xml:"height,attr,omitempty" json:"height,omitempty"`
+	Default              Bool   `xml:"default,attr,omitempty" json:"default,omitempty"`
+	Forced               Bool   `xml:"forced,attr,omitempty" json:"forced,omitempty"`
+	HearingImpaired      Bool   `xml:"hearingImpaired,attr,omitempty" json:"hearingImpaired,omitempty"`
+	Selected             Bool   `xml:"selected,attr,omitempty" json:"selected,omitempty"`
+	Key                  string `xml:"key,attr,omitempty" json:"key,omitempty"`
 }
 
 func wantsJSON(r *http.Request) bool {

@@ -65,8 +65,11 @@ Otherwise video is encoded:
 Otherwise it is encoded to AAC stereo at 160 kbps. A source without audio
 produces video-only output.
 
-**Other streams.** Only the first video stream and the first audio stream
-are used. Subtitles are not carried.
+**Other streams.** Only the first video stream and one audio stream are
+used. The audio stream is the first one unless another is chosen. Subtitles
+are never muxed into the output, but they can be burned in. See
+[streams.md](streams.md) for `audioStreamID`, `subtitleStreamID`, and
+`subtitles`.
 
 **Start position.** `offset`, in seconds, starts the output at that position
 of the source. Output timestamps start at 0, so clients add `offset` back
@@ -237,7 +240,5 @@ transcode:
 
 - Hardware decoding when video is copied, which is not needed.
 - Hardware tone mapping of HDR sources.
-- Subtitle burn-in.
-- Multiple audio tracks.
 - Adaptive bitrate ladders.
 - The `decision` endpoint.

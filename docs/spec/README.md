@@ -40,6 +40,7 @@ source.
 | [search.md](search.md)     | Search, hubs, matching and ranking                         |
 | [web.md](web.md)           | The built-in web app at `/web/`                            |
 | [transcode.md](transcode.md) | HLS and progressive MP4 transcoding                      |
+| [streams.md](streams.md)   | Audio tracks, subtitles, stream selection, burn-in         |
 
 ## Conventions
 

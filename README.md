@@ -35,7 +35,7 @@ Sloplex is a standalone product:
 | External metadata agents           | ⏳                                       |
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
-| Subtitles and extra audio tracks in transcodes | ⏳                           |
+| Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in |
 
 ## Quick start
 
@@ -111,6 +111,22 @@ TV libraries expect `<root>/<Show Name (Year)>/Season NN/<file with S01E02>`.
 See "Show sections" in [docs/spec/http-api.md](docs/spec/http-api.md) for the
 full naming rules.
 
+Subtitle files next to a video are picked up automatically when named
+`<video name>.<language>.srt`, with optional `.forced` or `.sdh` tags. For
+example, `Heat (1995).en.srt` or `Heat (1995).fr.forced.srt`. `.vtt`, `.ass`,
+and `.ssa` files work too.
+
+Embedded audio and subtitle tracks are listed per file. Each person's track
+choice is remembered, and the web app has audio and subtitle pickers.
+
+When transcoding:
+
+- image subtitles (PGS, VobSub) are burned into the picture;
+- text subtitles are sent to the player as a separate track, unless a client
+  asks for `subtitles=burn`.
+
+See [docs/spec/streams.md](docs/spec/streams.md).
+
 Artwork comes from image files next to your media, such as `poster.jpg`,
 `fanart.jpg`, `banner.jpg`, `season01-poster.jpg`, and `<episode>-thumb.jpg`.
 See [docs/spec/artwork.md](docs/spec/artwork.md) for the names that are
@@ -185,6 +201,8 @@ internal/artwork/   frame grabs and cached image resizing
 internal/search/    query folding and scoring
 internal/web/       built-in web app (embedded static files)
 internal/transcode/ ffmpeg HLS/MP4 transcoding sessions
+internal/subtitles/ subtitle extraction, conversion and shifting
+internal/lang/      language code normalisation
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder
 docs/spec/          the clean-room protocol specification

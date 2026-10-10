@@ -100,7 +100,9 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	mc := MediaContainer{Metadata: []Metadata{s.metadata(it, s.account(r))}}
+	md := s.metadata(it, s.account(r))
+	s.attachStreams(&md, it, s.account(r))
+	mc := MediaContainer{Metadata: []Metadata{md}}
 	s.setSection(&mc, it.SectionID)
 	writeContainer(w, r, mc)
 }

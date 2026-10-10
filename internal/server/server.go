@@ -20,6 +20,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
+	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
 	"github.com/mtdewwolf/sloplex/internal/web"
 )
@@ -41,6 +42,7 @@ type Deps struct {
 	Art        *artwork.Service
 	Accounts   *accounts.Store
 	Transcoder *transcode.Manager
+	Subtitles  *subtitles.Service
 	Log        *slog.Logger // optional
 }
 
@@ -53,6 +55,7 @@ type Server struct {
 	art      *artwork.Service
 	accounts *accounts.Store
 	tc       *transcode.Manager
+	subs     *subtitles.Service
 	logins   *loginLimiter
 	log      *slog.Logger
 	auth     *authenticator
@@ -69,7 +72,7 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	}
 	return &Server{
 		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
-		accounts: d.Accounts, tc: d.Transcoder, logins: newLoginLimiter(),
+		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
 		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts),
 		baseCtx: ctx, started: time.Now(),
 	}
@@ -99,6 +102,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /photo/:/transcode", s.handlePhotoTranscode)
 	s.accountRoutes(mux)
 	s.transcodeRoutes(mux)
+	s.streamRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())
 	mux.HandleFunc("GET /web", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)

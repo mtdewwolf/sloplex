@@ -23,7 +23,7 @@ func (c *countingProber) Probe(_ context.Context, path string) (probe.Info, erro
 		c.calls = map[string]int{}
 	}
 	c.calls[path]++
-	return probe.Info{Container: probe.ContainerForPath(path), Duration: 5000, Width: 1920, Height: 1080}, nil
+	return probe.Info{Container: probe.ContainerForPath(path), Duration: 5000, Width: 1920, Height: 1080, ProbeVersion: probe.Version}, nil
 }
 
 func writeFile(t *testing.T, path, content string) {

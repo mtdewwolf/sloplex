@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mtdewwolf/sloplex/internal/library"
+	"github.com/mtdewwolf/sloplex/internal/probe"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
@@ -79,7 +80,74 @@ func (s *Server) transcodeTarget(w http.ResponseWriter, r *http.Request) (librar
 		}
 		req.MaxBitrate = br
 	}
+	if !s.applyStreams(w, r, media.Parts[pi], &req) {
+		return library.Item{}, transcode.Request{}, false
+	}
 	return it, req, true
+}
+
+// applyStreams sets the audio stream and any subtitle burn-in of a
+// transcode from the request parameters and the account's selection; see
+// "Transcoding" in docs/spec/streams.md.
+func (s *Server) applyStreams(w http.ResponseWriter, r *http.Request, part library.Part, req *transcode.Request) bool {
+	q := r.URL.Query()
+	audio, sub := s.selected(s.account(r), part)
+	if v := q.Get("audioStreamID"); v != "" {
+		id, err := strconv.Atoi(v)
+		st, ok := findStream(part, id, probe.StreamAudio)
+		if err != nil || !ok {
+			http.Error(w, "audioStreamID is not an audio stream of this part", http.StatusBadRequest)
+			return false
+		}
+		audio = st
+	}
+	if v := q.Get("subtitleStreamID"); v != "" {
+		id, err := strconv.Atoi(v)
+		if err != nil {
+			http.Error(w, "invalid subtitleStreamID", http.StatusBadRequest)
+			return false
+		}
+		sub = nil
+		if id != 0 {
+			st, ok := findStream(part, id, probe.StreamSubtitle)
+			if !ok {
+				http.Error(w, "subtitleStreamID is not a subtitle stream of this part", http.StatusBadRequest)
+				return false
+			}
+			sub = st
+		}
+	}
+	mode := q.Get("subtitles")
+	switch mode {
+	case "":
+		mode = "auto"
+	case "auto", "burn", "none":
+	default:
+		http.Error(w, "subtitles must be auto, burn or none", http.StatusBadRequest)
+		return false
+	}
+
+	if audio != nil && audio.Index >= 0 {
+		req.SelectAudio, req.AudioIndex = true, audio.Index
+		req.Source.AudioCodec, req.Source.AudioChannels = audio.Codec, audio.Channels
+	}
+	if sub == nil || mode == "none" {
+		return true
+	}
+	text := isTextSub(*sub)
+	switch {
+	case !text:
+		req.Burn = &transcode.Burn{Index: sub.Index}
+	case mode == "burn":
+		file, _, err := s.subtitleSource(r, *sub, part)
+		if err != nil {
+			s.log.Warn("subtitle for burn-in", "stream", sub.ID, "err", err)
+			http.Error(w, "could not prepare the subtitle for burn-in", http.StatusInternalServerError)
+			return false
+		}
+		req.Burn = &transcode.Burn{File: file}
+	}
+	return true
 }
 
 // transcodeError writes the response for a failed start.

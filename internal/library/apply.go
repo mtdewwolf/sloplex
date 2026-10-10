@@ -93,14 +93,18 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 
 	for _, f := range group {
 		m := Media{Info: f.Info}
+		m.Info.Streams = nil // kept on the part, with IDs
 		pt := Part{File: f.Path, Size: f.Size, ModTime: f.ModTime, Duration: f.Info.Duration, Container: f.Info.Container}
+		var prevStreams []Stream
 		if ref, ok := a.prev[f.Path]; ok {
 			m.ID, pt.ID = ref.media.ID, ref.part.ID
+			prevStreams = ref.part.Streams
 			changed = changed || ref.item.ID != it.ID
 		} else {
 			m.ID, pt.ID = next(&a.s.d.NextMediaID), next(&a.s.d.NextPartID)
 			changed = true
 		}
+		pt.Streams = a.streams(f, prevStreams)
 		changed = changed || f.Changed
 		m.Parts = []Part{pt}
 		it.Media = append(it.Media, m)
@@ -117,6 +121,36 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 	}
 	a.out = append(a.out, it)
 	return changed
+}
+
+// streamKey identifies a stream within its part across rescans.
+func streamKey(st Stream) string {
+	if st.File != "" {
+		return "f:" + st.File
+	}
+	return fmt.Sprintf("i%d:%s", st.Index, st.Codec)
+}
+
+// streams builds a part's stream list, keeping the IDs of streams that
+// were already known.
+func (a *applier) streams(f ScannedFile, prev []Stream) []Stream {
+	ids := make(map[string]int, len(prev))
+	for _, st := range prev {
+		ids[streamKey(st)] = st.ID
+	}
+	out := make([]Stream, 0, len(f.Info.Streams)+len(f.Sidecars))
+	for _, ps := range f.Info.Streams {
+		out = append(out, Stream{Stream: ps})
+	}
+	out = append(out, f.Sidecars...)
+	for i := range out {
+		if id, ok := ids[streamKey(out[i])]; ok {
+			out[i].ID = id
+		} else {
+			out[i].ID = next(&a.s.d.NextStreamID)
+		}
+	}
+	return out
 }
 
 // container reuses a previous show or season (or allocates a new one) and

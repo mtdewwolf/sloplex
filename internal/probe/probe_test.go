@@ -4,6 +4,7 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -22,8 +23,13 @@ func TestParseFFprobe(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Info{Duration: 7265123, Bitrate: 15000, Width: 3840, Height: 2160, VideoCodec: "hevc", AudioCodec: "eac3", AudioChannels: 6}
-	if got != want {
+	streams := got.Streams
+	got.Streams = nil
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %+v, want %+v", got, want)
+	}
+	if len(streams) != 4 || streams[1].Channels != 6 || streams[3].Type != StreamSubtitle || streams[3].Codec != "subrip" {
+		t.Errorf("streams = %+v", streams)
 	}
 }
 
@@ -62,5 +68,29 @@ func TestFFprobeReal(t *testing.T) {
 	}
 	if info.Width != 320 || info.Height != 240 || info.Container != "mkv" || info.Duration < 900 || info.AudioCodec == "" {
 		t.Errorf("info = %+v", info)
+	}
+}
+
+func TestParseFFprobeStreamDetails(t *testing.T) {
+	out := []byte(`{"format": {}, "streams": [
+		{"index": 0, "codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080},
+		{"index": 1, "codec_type": "audio", "codec_name": "ac3", "channels": 6, "channel_layout": "5.1(side)",
+		 "tags": {"language": "fra", "title": "Commentary"}, "disposition": {"default": 0}},
+		{"index": 2, "codec_type": "subtitle", "codec_name": "hdmv_pgs_subtitle",
+		 "tags": {"language": "und"}, "disposition": {"forced": 1, "hearing_impaired": 1}},
+		{"index": 3, "codec_type": "video", "codec_name": "mjpeg", "disposition": {"attached_pic": 1}},
+		{"index": 4, "codec_type": "attachment", "codec_name": "ttf"}
+	]}`)
+	got, err := parseFFprobe(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Stream{
+		{Index: 0, Type: StreamVideo, Codec: "h264", Width: 1920, Height: 1080},
+		{Index: 1, Type: StreamAudio, Codec: "ac3", Language: "fra", Title: "Commentary", Channels: 6, ChannelLayout: "5.1(side)"},
+		{Index: 2, Type: StreamSubtitle, Codec: "hdmv_pgs_subtitle", Forced: true, HearingImpaired: true},
+	}
+	if !reflect.DeepEqual(got.Streams, want) {
+		t.Errorf("streams =\n%+v\nwant\n%+v", got.Streams, want)
 	}
 }

@@ -23,6 +23,38 @@ type Info struct {
 	AudioCodec    string `json:"audioCodec,omitempty"`
 	AudioChannels int    `json:"audioChannels,omitempty"`
 	Container     string `json:"container,omitempty"`
+	// Streams lists every stream in file order (see docs/spec/streams.md).
+	Streams []Stream `json:"streams,omitempty"`
+	// ProbeVersion is Version when the file was probed by ffprobe, so
+	// libraries probed by older versions are re-probed once.
+	ProbeVersion int `json:"probeVersion,omitempty"`
+}
+
+// Version is the current probe format version.
+const Version = 2
+
+// Stream types.
+const (
+	StreamVideo    = "video"
+	StreamAudio    = "audio"
+	StreamSubtitle = "subtitle"
+)
+
+// Stream is one stream of a media file.
+type Stream struct {
+	// Index is the ffprobe stream index; -1 for sidecar files.
+	Index           int    `json:"index"`
+	Type            string `json:"type"`
+	Codec           string `json:"codec"`
+	Language        string `json:"language,omitempty"`
+	Title           string `json:"title,omitempty"`
+	Channels        int    `json:"channels,omitempty"`
+	ChannelLayout   string `json:"channelLayout,omitempty"`
+	Width           int    `json:"width,omitempty"`
+	Height          int    `json:"height,omitempty"`
+	Default         bool   `json:"default,omitempty"`
+	Forced          bool   `json:"forced,omitempty"`
+	HearingImpaired bool   `json:"hearingImpaired,omitempty"`
 }
 
 // Prober inspects a media file.
@@ -102,6 +134,7 @@ func (f *FFprobe) Probe(ctx context.Context, path string) (Info, error) {
 		return Info{}, fmt.Errorf("ffprobe %s: %w", path, err)
 	}
 	info.Container = ContainerForPath(path)
+	info.ProbeVersion = Version
 	return info, nil
 }
 
@@ -111,11 +144,15 @@ type ffprobeOutput struct {
 		BitRate  string `json:"bit_rate"`
 	} `json:"format"`
 	Streams []struct {
-		CodecType string `json:"codec_type"`
-		CodecName string `json:"codec_name"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-		Channels  int    `json:"channels"`
+		Index         int               `json:"index"`
+		CodecType     string            `json:"codec_type"`
+		CodecName     string            `json:"codec_name"`
+		Width         int               `json:"width"`
+		Height        int               `json:"height"`
+		Channels      int               `json:"channels"`
+		ChannelLayout string            `json:"channel_layout"`
+		Tags          map[string]string `json:"tags"`
+		Disposition   map[string]int    `json:"disposition"`
 	} `json:"streams"`
 }
 
@@ -132,16 +169,32 @@ func parseFFprobe(b []byte) (Info, error) {
 		info.Bitrate = int(br / 1000)
 	}
 	for _, s := range out.Streams {
+		if s.CodecType != StreamVideo && s.CodecType != StreamAudio && s.CodecType != StreamSubtitle {
+			continue
+		}
+		if s.CodecType == StreamVideo && s.Disposition["attached_pic"] == 1 {
+			continue // embedded cover art, not a playable video stream
+		}
+		st := Stream{Index: s.Index, Type: s.CodecType, Codec: s.CodecName,
+			Language: s.Tags["language"], Title: s.Tags["title"],
+			Default: s.Disposition["default"] == 1, Forced: s.Disposition["forced"] == 1,
+			HearingImpaired: s.Disposition["hearing_impaired"] == 1}
+		if st.Language == "und" {
+			st.Language = ""
+		}
 		switch s.CodecType {
-		case "video":
+		case StreamVideo:
+			st.Width, st.Height = s.Width, s.Height
 			if info.VideoCodec == "" {
 				info.VideoCodec, info.Width, info.Height = s.CodecName, s.Width, s.Height
 			}
-		case "audio":
+		case StreamAudio:
+			st.Channels, st.ChannelLayout = s.Channels, s.ChannelLayout
 			if info.AudioCodec == "" {
 				info.AudioCodec, info.AudioChannels = s.CodecName, s.Channels
 			}
 		}
+		info.Streams = append(info.Streams, st)
 	}
 	return info, nil
 }
