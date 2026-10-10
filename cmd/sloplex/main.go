@@ -30,6 +30,8 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/server"
 	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
+	"github.com/mtdewwolf/sloplex/internal/truenas"
+	"github.com/mtdewwolf/sloplex/internal/updates"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -98,6 +100,10 @@ func run(configPath string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	nas, err := truenas.Open(filepath.Join(cfg.DataDir, "truenas.json"))
+	if err != nil {
+		return err
+	}
 
 	var prober probe.Prober = probe.None{}
 	if cfg.FFprobe != "-" {
@@ -146,6 +152,10 @@ func run(configPath string, log *slog.Logger) error {
 	}
 	interval, _ := cfg.ScanEvery() // checked by Validate
 	scanner.Auto(ctx, library.AutoOptions{Watch: cfg.Watch, Interval: interval})
+	checker := updates.New(version, cfg.UpdateURL, log)
+	if cfg.UpdateCheck {
+		go checker.Run(ctx, time.Minute, 24*time.Hour)
+	}
 
 	srv := server.New(ctx, server.Options{
 		FriendlyName:    cfg.FriendlyName,
@@ -153,7 +163,9 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
+		AutoUpdateCheck: cfg.UpdateCheck,
 	}, server.Deps{Store: store, Scanner: scanner, Play: play, Playlists: lists, Art: art, Accounts: accts, Transcoder: tc,
+		Updates: checker, TrueNAS: nas,
 		Subtitles: subtitles.New(ffmpeg, filepath.Join(cfg.DataDir, "cache", "subs")), Log: log})
 
 	started := time.Now().Unix()

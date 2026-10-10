@@ -24,8 +24,10 @@ source.
    from. When you add a fact, add its source.
 4. Any change to wire behaviour updates the spec in the same pull request.
    Reviewers check that the code matches the spec, not the other way round.
-5. Sloplex does **not** talk to plex.tv or any other hosted service. Identity,
-   accounts, and tokens are local to the server.
+5. Sloplex does **not** talk to plex.tv. Identity, accounts, and tokens are
+   local to the server. The only outbound connections are the update check
+   to GitHub, which can be turned off, and the owner's own TrueNAS server
+   when they set one up; see [updates.md](updates.md).
 
 ## Pages
 
@@ -44,6 +46,7 @@ source.
 | [metadata.md](metadata.md) | Local `.nfo` metadata: summaries, ratings, genres, cast    |
 | [collections.md](collections.md) | Collections: automatic from `.nfo` sets, and manual  |
 | [playlists.md](playlists.md) | Per-account playlists of movies and episodes           |
+| [updates.md](updates.md)   | Update check and one-click updates through TrueNAS         |
 
 ## Conventions
 

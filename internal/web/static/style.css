@@ -70,6 +70,10 @@ button:disabled { opacity: .5; cursor: default; }
   max-width: 560px;
 }
 
+details.card-panel { margin-top: 12px; }
+details.card-panel summary { cursor: pointer; font-weight: 600; }
+details.card-panel[open] summary { margin-bottom: 8px; }
+
 .login { margin: 12vh auto 0; max-width: 360px; }
 .login h1 { color: var(--accent); }
 

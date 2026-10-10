@@ -29,6 +29,11 @@ export class Suite {
     else this.problems.push(`FAIL: ${msg}`);
   }
 
+  // expectDialog lets the next dialog through, accepting it or not.
+  expectDialog(accept = true) {
+    (this.dialogs ??= []).push(accept);
+  }
+
   // watch records page errors, console errors, unexpected dialogs and HTTP
   // errors. allow(status, path) whitelists expected failures.
   watch(page, allow = () => false) {
@@ -38,7 +43,11 @@ export class Suite {
         this.problems.push(`console ${m.type()}: ${m.text()}`);
       }
     });
-    page.on("dialog", (d) => { this.problems.push(`unexpected dialog: ${d.message()}`); d.dismiss(); });
+    page.on("dialog", (d) => {
+      if (this.dialogs?.length) return this.dialogs.shift() ? d.accept() : d.dismiss();
+      this.problems.push(`unexpected dialog: ${d.message()}`);
+      d.dismiss();
+    });
     page.on("response", (r) => {
       const path = new URL(r.url()).pathname;
       if (r.status() >= 400 && !allow(r.status(), path)) this.problems.push(`HTTP ${r.status()} ${path}`);

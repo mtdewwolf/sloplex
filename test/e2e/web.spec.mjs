@@ -5,7 +5,8 @@ import { chromium, base, Suite, login, playButton } from "./lib.mjs";
 const s = new Suite("web");
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 860 } });
-s.watch(page, (status, path) => status === 401 && path === "/sloplex/auth/login");
+s.watch(page, (status, path) => (status === 401 && path === "/sloplex/auth/login") ||
+  (status === 400 && path === "/sloplex/truenas") || (status === 502 && path === "/sloplex/updates/install"));
 
 // Sign-in errors, then the owner's library.
 await page.goto(base + "/web/");
@@ -78,6 +79,35 @@ const transcoder = await page.textContent("#transcoder");
 s.check(transcoder.includes("up to") && transcoder.includes("HDR tone mapping on the CPU"), `admin page shows the transcoder: ${transcoder}`);
 const version = await page.textContent("#version");
 s.check(/^Sloplex \d+\.\d+\.\d+/.test(version), `admin page shows the server version: ${version}`);
+// Updates: the stand-in GitHub announces 9.9.9.
+s.check((await page.textContent("#update-status")).includes("Not checked yet"), `update status before checking: ${await page.textContent("#update-status")}`);
+await page.click("#check-updates");
+await page.waitForFunction(() => document.querySelector("#update-status").textContent.includes("Sloplex 9.9.9 is available"));
+s.check(await page.isVisible(`a:text("What's new in 9.9.9")`), "a newer release is announced with a link to it");
+s.check(!(await page.isVisible("#update-now")), "no update button until TrueNAS is set up");
+// The owner sets up one-click updates; mistakes are explained.
+await page.click("#truenas summary");
+await page.fill("input[name=truenas-url]", "http://10.0.0.38");
+await page.fill("input[name=truenas-key]", "not-a-real-key");
+await page.click("#truenas button:text('Save')");
+await page.waitForFunction(() => document.querySelector("#truenas-result").textContent.includes("https://"));
+s.check(true, "TrueNAS settings refuse plain HTTP");
+await page.fill("input[name=truenas-url]", "https://127.0.0.1:9");
+await page.click("#truenas button:text('Test connection')");
+await page.waitForFunction(() => document.querySelector("#truenas-result").textContent.includes("could not connect"), null, { timeout: 15000 });
+s.check(true, "testing an unreachable TrueNAS explains the failure");
+await page.click("#truenas button:text('Save')");
+await page.waitForSelector("#toast:text('TrueNAS settings saved')");
+await page.waitForSelector("#truenas summary:text('One-click updates: set up')");
+s.check(await page.getAttribute("input[name=truenas-key]", "placeholder") === "saved; leave blank to keep", "a saved key is never shown again");
+// Now the update can be started; this TrueNAS is unreachable, which is reported.
+await page.waitForSelector("#update-now:text('Update to 9.9.9')");
+s.expectDialog();
+await page.click("#update-now");
+await page.waitForFunction(() => document.querySelector("#update-status").textContent.includes("could not connect"), null, { timeout: 40000 });
+s.check(true, "starting an update with TrueNAS unreachable reports why");
+await page.click("#truenas summary");
+await s.shot(page, "admin-updates");
 await page.click("button:text('New account')");
 await page.fill("#admin-panel input:not([type])", "kid");
 await page.fill("#admin-panel input[type=password]", "cartoons1");

@@ -119,6 +119,14 @@ See [playlists.md](playlists.md).
 - Refresh library sections.
 - Show how the server transcodes, and its version from `/identity`, so an
   admin can confirm which release is running.
+- Check for updates, and link to a newer release; see
+  [updates.md](updates.md). When one-click updates are set up, an
+  **Update** button asks TrueNAS to install it. The page then reloads once
+  the server answers with a new version, giving up after ten minutes.
+- The owner, and no other admin, can set up one-click updates: the TrueNAS
+  address, app name, API key, and certificate fingerprint. A saved key is
+  never shown again. When a test finds an untrusted certificate, its
+  fingerprint is shown with a button to trust it.
 
 ### Text handling
 

@@ -23,6 +23,8 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
+	"github.com/mtdewwolf/sloplex/internal/truenas"
+	"github.com/mtdewwolf/sloplex/internal/updates"
 	"github.com/mtdewwolf/sloplex/internal/web"
 )
 
@@ -33,6 +35,8 @@ type Options struct {
 	Version         string
 	Tokens          []string
 	AllowedNetworks []netip.Prefix
+	// AutoUpdateCheck says whether the daily update check is on.
+	AutoUpdateCheck bool
 }
 
 // Deps are the services a Server uses.
@@ -46,7 +50,12 @@ type Deps struct {
 	Subtitles  *subtitles.Service
 	// Playlists is optional; without it playlists are kept in memory.
 	Playlists *playlists.Store
-	Log       *slog.Logger // optional
+	// Updates is optional; without it updates are looked up at the official
+	// repository on request.
+	Updates *updates.Checker
+	// TrueNAS is optional; without it TrueNAS settings are kept in memory.
+	TrueNAS *truenas.Store
+	Log     *slog.Logger // optional
 }
 
 // Server serves the HTTP API.
@@ -60,6 +69,9 @@ type Server struct {
 	tc        *transcode.Manager
 	subs      *subtitles.Service
 	playlists *playlists.Store
+	updates   *updates.Checker
+	truenas   *truenas.Store
+	tn        trueNAS
 	logins    *loginLimiter
 	log       *slog.Logger
 	auth      *authenticator
@@ -77,9 +89,15 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	if d.Playlists == nil {
 		d.Playlists, _ = playlists.Open("") // in memory; cannot fail
 	}
+	if d.Updates == nil {
+		d.Updates = updates.New(opts.Version, "", d.Log)
+	}
+	if d.TrueNAS == nil {
+		d.TrueNAS, _ = truenas.Open("") // in memory; cannot fail
+	}
 	return &Server{
-		playlists: d.Playlists,
-		opts:      opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
+		playlists: d.Playlists, updates: d.Updates, truenas: d.TrueNAS, tn: realTrueNAS{},
+		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
 		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts),
 		baseCtx: ctx, started: time.Now(),
@@ -113,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	s.streamRoutes(mux)
 	s.collectionRoutes(mux)
 	s.playlistRoutes(mux)
+	s.updateRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())
 	mux.HandleFunc("GET /web", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)

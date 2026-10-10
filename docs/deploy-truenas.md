@@ -236,6 +236,61 @@ back to the moving tag at the next update.
 New releases also carry Debian's latest ffmpeg and library fixes. Staying
 on an old version means missing those as well.
 
+### Updating from Sloplex
+
+The **Admin** page shows the running version and a **Check for updates**
+button. Sloplex also checks GitHub once a day; set `"updateCheck": false`
+in `sloplex.json` to stop that.
+
+With one-click updates set up, a newer release gets an **Update** button.
+Sloplex then asks TrueNAS to pull the image and restart the app, the same
+as clicking **Update** in TrueNAS, without waiting for TrueNAS to notice
+the release. The app's image must use a moving tag such as `latest`. A
+pinned version has nothing new to pull.
+
+This needs a TrueNAS API key, which TrueNAS ties to a user. Anyone holding
+the key can manage every app on the NAS, so give it to a user that can do
+only that:
+
+1. **Credentials → Groups → Add**: a group named `sloplex-updates`.
+2. **Credentials → Groups → Privileges → Add**: a privilege named
+   `Sloplex updates` for that group, with the single role `APPS_WRITE`.
+3. **Credentials → Users → Add**: a user named `sloplex-updates` in that
+   group, with password login and shell access disabled.
+4. **My API Keys → Add API Key**, choosing that user, non-expiring. Copy
+   the key; TrueNAS shows it only once.
+
+If TrueNAS will not offer that user for a key, a key for your admin user
+also works, but it can then do anything that admin can.
+
+Then, in Sloplex, signed in as `owner`: **Admin → Server → Set up one-click
+updates through TrueNAS**:
+
+- **TrueNAS address**: `https://` and the address you use for the TrueNAS
+  web UI, such as `https://192.168.1.10`. Plain `http://` is refused,
+  because TrueNAS revokes an API key sent over it.
+- **App name**: the app's name under **Apps → Installed**, such as
+  `sloplex`.
+- **API key**: the key from step 4.
+
+Click **Test connection**. TrueNAS's own certificate is self-signed, so the
+first test shows its SHA-256 fingerprint. Check it from the NAS shell,
+where nothing can sit in between:
+
+```sh
+echo | openssl s_client -connect 127.0.0.1:443 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+```
+
+If the two match, click **Trust this certificate**. Then **Test connection**
+reports the app's state; **Save**. Only the owner sees these settings, and
+the key is never shown again. Changing the address or the certificate
+needs the key entered again, so a saved key cannot be sent somewhere else.
+**Remove** deletes the settings and the key; revoke the key in TrueNAS as
+well if you stop using it.
+
+Take a snapshot before clicking **Update**, as above. Playback stops while
+TrueNAS restarts Sloplex. The page reloads when the new version answers.
+
 ## Rollback
 
 Stop the app, edit its YAML to the previous exact version, such as

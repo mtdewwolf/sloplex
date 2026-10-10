@@ -749,6 +749,9 @@ async function viewAdmin() {
   const accounts = (await api("GET", "/sloplex/accounts")).accounts || [];
   const tc = await api("GET", "/sloplex/transcoder").catch(() => null);
   const version = container(await api("GET", "/identity").catch(() => null)).version;
+  const updates = await api("GET", "/sloplex/updates").catch(() => null);
+  const owner = state.me.id === 1;
+  const nas = owner ? await api("GET", "/sloplex/truenas").catch(() => null) : null;
 
   const rows = accounts.map((a) => el("tr", {},
     el("td", {}, el("strong", { text: a.name }), a.id === 1 ? el("div", { class: "muted", text: "owner" }) : null),
@@ -790,7 +793,116 @@ async function viewAdmin() {
     el("p", { id: "transcoder", text: transcoderSummary(tc) }),
     el("h2", { text: "Server" }),
     el("p", { id: "version", text: version ? `Sloplex ${version}` : "Version unknown." }),
+    updatesPanel(updates, owner),
+    owner && nas ? trueNASPanel(nas) : null,
     el("div", { id: "admin-panel" }));
+}
+
+// updatesPanel shows the update status, a check button and, when TrueNAS is
+// set up and a newer release exists, a button to install it.
+function updatesPanel(st, owner) {
+  const status = el("p", { id: "update-status" });
+  const actions = el("div", { class: "row" });
+  const show = (s) => {
+    status.textContent = updateSummary(s, owner);
+    actions.replaceChildren(
+      el("button", { type: "button", id: "check-updates", text: "Check for updates", onclick: check }),
+      s.available && s.releaseUrl ? el("a", { href: s.releaseUrl, target: "_blank", rel: "noopener", text: `What's new in ${s.latest}` }) : null,
+      s.available && s.oneClick ? el("button", { class: "primary", type: "button", id: "update-now", text: `Update to ${s.latest}`, onclick: () => install(s) }) : null);
+  };
+  const check = async () => {
+    status.textContent = "Checking…";
+    try { show(await api("POST", "/sloplex/updates/check")); } catch (ex) { status.textContent = ex.message; }
+  };
+  const install = async (s) => {
+    if (!confirm(`Update Sloplex to ${s.latest}? TrueNAS will download it and restart Sloplex. Playback stops until it is back, usually within a few minutes.`)) return;
+    try {
+      await api("POST", "/sloplex/updates/install");
+    } catch (ex) { status.textContent = ex.message; return; }
+    actions.replaceChildren();
+    status.textContent = `TrueNAS is updating Sloplex to ${s.latest}. This page reloads when it is back.`;
+    waitForVersion(s.current, status);
+  };
+  if (st) show(st); else status.textContent = "Update status unavailable.";
+  return el("div", { class: "stack" }, status, actions);
+}
+
+function updateSummary(s, owner) {
+  if (!s.comparable) return `This build (${s.current}) is not a release, so it is not compared with releases.`;
+  if (!s.checkedAt) return s.autoCheck ? "Not checked yet. Sloplex checks once a day." : "Not checked yet.";
+  if (!s.latest) return `Could not check for updates: ${s.error}`;
+  let text = s.available ? `Sloplex ${s.latest} is available.` : `Up to date: ${s.latest} is the newest release.`;
+  if (s.available && !s.oneClick) text += owner ? " Update it in TrueNAS, or set up one-click updates below." : " Update it in TrueNAS.";
+  if (s.error) text += ` The last check failed: ${s.error}.`;
+  return `${text} Checked ${fmtDate(s.checkedAt)}.`;
+}
+
+// waitForVersion reloads the page once the server answers with a version
+// other than old, giving up after ten minutes.
+async function waitForVersion(old, status) {
+  const until = Date.now() + 10 * 60 * 1000;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const v = container(await api("GET", "/identity").catch(() => null)).version;
+    if (v && v !== old) { location.reload(); return; }
+  }
+  status.textContent = `Sloplex is still running ${old}. Check the app in TrueNAS.`;
+}
+
+// trueNASPanel lets the owner give Sloplex what it needs to ask TrueNAS for
+// updates; see docs/spec/updates.md.
+function trueNASPanel(nas) {
+  const url = el("input", { name: "truenas-url", value: nas.url, placeholder: "https://192.168.1.10", required: true });
+  const app = el("input", { name: "truenas-app", value: nas.app || "sloplex", required: true });
+  const key = el("input", { name: "truenas-key", type: "password", autocomplete: "off",
+    placeholder: nas.keySet ? "saved; leave blank to keep" : "", required: !nas.keySet });
+  const cert = el("input", { name: "truenas-cert", value: nas.certSHA256, placeholder: "optional" });
+  const out = el("p", { id: "truenas-result" });
+  const body = () => ({ url: url.value.trim(), app: app.value.trim(), apiKey: key.value.trim(), certSHA256: cert.value.trim() });
+  const test = async () => {
+    out.textContent = "Testing…";
+    try {
+      const r = await api("POST", "/sloplex/truenas/test", body());
+      if (r.ok) out.textContent = `Connected. The app "${app.value.trim()}" is ${r.state.toLowerCase()}.`;
+      else if (r.fingerprint) {
+        out.replaceChildren(
+          `TrueNAS's certificate is not trusted. Its SHA-256 fingerprint is ${r.fingerprint}. ` +
+          "Trust it only if it matches TrueNAS's own; the deployment guide shows how to check. ",
+          el("button", { type: "button", id: "trust-cert", text: "Trust this certificate", onclick: () => { cert.value = r.fingerprint; test(); } }));
+      } else out.textContent = r.error;
+    } catch (ex) { out.textContent = ex.message; }
+  };
+  const form = el("form", {
+    class: "stack",
+    onsubmit: async (e) => {
+      e.preventDefault();
+      try {
+        await api("PUT", "/sloplex/truenas", body());
+        toast("TrueNAS settings saved");
+        viewAdmin();
+      } catch (ex) { out.textContent = ex.message; }
+    },
+  },
+  el("label", {}, "TrueNAS address", url),
+  el("label", {}, "App name in TrueNAS", app),
+  el("label", {}, "API key", key),
+  el("label", {}, "Certificate fingerprint (SHA-256, for TrueNAS's own certificate)", cert),
+  el("div", { class: "row" },
+    el("button", { type: "button", text: "Test connection", onclick: test }),
+    el("button", { class: "primary", type: "submit", text: "Save" }),
+    nas.keySet ? el("button", {
+      type: "button", text: "Remove",
+      onclick: async () => {
+        if (!confirm("Remove the TrueNAS settings and API key?")) return;
+        try { await api("DELETE", "/sloplex/truenas"); toast("TrueNAS settings removed"); viewAdmin(); } catch (ex) { out.textContent = ex.message; }
+      },
+    }) : null),
+  out);
+  return el("details", { id: "truenas", class: "card-panel" },
+    el("summary", { text: nas.keySet ? `One-click updates: set up for the app "${nas.app}"` : "Set up one-click updates through TrueNAS" }),
+    el("p", { class: "muted", text: "Sloplex asks TrueNAS to download the new image and restart the app. The app's image must use a moving tag, such as latest. " +
+      "The API key can manage every app on your NAS, so keep Sloplex's owner account safe. Only the owner sees this." }),
+    form);
 }
 
 function transcoderSummary(tc) {

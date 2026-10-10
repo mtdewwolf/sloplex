@@ -15,7 +15,8 @@ log() { printf '\n== %s\n' "$*"; }
 ff() { ffmpeg -nostdin -v error -y "$@"; }
 
 log "building"
-(cd "$repo" && go build -o "$work/sloplex" ./cmd/sloplex)
+# Built as a release so the update check has something to compare.
+(cd "$repo" && go build -ldflags "-X main.version=0.2.0" -o "$work/sloplex" ./cmd/sloplex)
 
 # Test media is generated once and reused between runs.
 if [ ! -f "$media/.done" ]; then
@@ -56,6 +57,15 @@ cat > "$media/movies/Big Buck (2008)/Big Buck (2008).nfo" <<'NFO'
 NFO
 leaves=7 # movies and episodes above
 
+# A stand-in for GitHub's release lookup, announcing a newer release.
+mkdir -p "$work/gh/releases"
+printf '%s' '{"tag_name":"v9.9.9","name":"Sloplex 9.9.9","html_url":"https://example.com/sloplex/9.9.9","published_at":"2026-10-11T12:00:00Z"}' \
+  > "$work/gh/releases/latest"
+ghport=$((port + 1))
+python3 -m http.server "$ghport" --bind 127.0.0.1 --directory "$work/gh" >/dev/null 2>&1 &
+ghpid=$!
+trap 'kill $ghpid 2>/dev/null || true' EXIT
+
 suites=("$@")
 if [ ${#suites[@]} -eq 0 ]; then
   suites=()
@@ -69,13 +79,14 @@ for suite in "${suites[@]}"; do
   rm -rf "$data"
   cat > "$work/config.json" <<JSON
 {"friendlyName":"e2e","listen":"127.0.0.1:$port","dataDir":"$data","discovery":false,
+ "updateCheck":false,"updateURL":"http://127.0.0.1:$ghport/releases/latest",
  "libraries":[{"title":"Movies","type":"movie","paths":["$media/movies"]},
               {"title":"TV","type":"show","paths":["$media/tv"]},
               {"title":"Kids","type":"show","paths":["$media/kids"]}]}
 JSON
   "$work/sloplex" -config "$work/config.json" > "$work/server-$suite.log" 2>&1 &
   pid=$!
-  trap 'kill $pid 2>/dev/null || true' EXIT
+  trap 'kill $pid $ghpid 2>/dev/null || true' EXIT
   for _ in $(seq 100); do curl -sf "localhost:$port/identity" >/dev/null && break; sleep 0.1; done
   token="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['token'])" "$data/identity.json")"
   for _ in $(seq 300); do
@@ -92,7 +103,7 @@ JSON
   fi
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
-  trap - EXIT
+  trap 'kill $ghpid 2>/dev/null || true' EXIT
 done
 
 if [ ${#failed[@]} -gt 0 ]; then

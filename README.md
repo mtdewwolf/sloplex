@@ -264,7 +264,7 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 |-------------------|----------------|-----------------------------------------------------------|
 | `friendlyName`    | hostname       | The name shown to clients                                 |
 | `listen`          | `:32400`       | HTTP listen address                                       |
-| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `playlists.json`, `cache/` |
+| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `playlists.json`, `truenas.json`, `cache/` |
 | `discovery`       | `true`         | Answer GDM searches on UDP 32414                          |
 | `tokens`          | `[]`           | Extra owner master tokens                                 |
 | `allowedNetworks` | `[]`           | CIDRs that may skip tokens; tokenless requests act as the owner |
@@ -278,6 +278,8 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 | `scanInterval`    | `"1h"`         | Rescan every library this often (at least `1m`); `"0"` turns it off |
 | `x264Preset`      | `"auto"`       | `auto`, or one of `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` |
 | `transcodeThrottle` | `true`       | Pause HLS transcodes that are far ahead of the player     |
+| `updateCheck`     | `true`         | Look for a newer release on GitHub once a day; admins can always check from the Admin page |
+| `updateURL`       | `""`           | Release lookup address; `""` is this repository's latest GitHub release |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout

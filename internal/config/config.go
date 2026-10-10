@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -54,8 +55,12 @@ type Config struct {
 	TranscodeThrottle bool `json:"transcodeThrottle"`
 	// GPUToneMapping chooses the GPU tone mappers to try: auto, opencl or
 	// off.
-	GPUToneMapping string    `json:"gpuToneMapping"`
-	Libraries      []Library `json:"libraries"`
+	GPUToneMapping string `json:"gpuToneMapping"`
+	// UpdateCheck looks for a newer release once a day.
+	UpdateCheck bool `json:"updateCheck"`
+	// UpdateURL replaces the release lookup address, for forks and tests.
+	UpdateURL string    `json:"updateURL"`
+	Libraries []Library `json:"libraries"`
 }
 
 // SupportedTypes lists the library types the server can scan.
@@ -80,6 +85,7 @@ func Default() Config {
 		GPUToneMapping:    "auto",
 		Watch:             true,
 		ScanInterval:      "1h",
+		UpdateCheck:       true,
 	}
 }
 
@@ -131,6 +137,11 @@ func (c Config) Validate() error {
 	case "auto", "opencl", "off":
 	default:
 		return fmt.Errorf("gpuToneMapping %q: want auto, opencl or off", c.GPUToneMapping)
+	}
+	if c.UpdateURL != "" {
+		if u, err := url.Parse(c.UpdateURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("updateURL %q: want an http or https URL", c.UpdateURL)
+		}
 	}
 	switch c.X264Preset {
 	case "auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium":
