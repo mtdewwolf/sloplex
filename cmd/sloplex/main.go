@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/accounts"
 	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/config"
 	"github.com/mtdewwolf/sloplex/internal/gdm"
@@ -85,6 +86,10 @@ func run(configPath string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	accts, err := accounts.Open(filepath.Join(cfg.DataDir, "accounts.json"))
+	if err != nil {
+		return err
+	}
 
 	var prober probe.Prober = probe.None{}
 	if cfg.FFprobe != "-" {
@@ -121,7 +126,7 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Log: log})
+	}, server.Deps{Store: store, Scanner: scanner, Play: play, Art: art, Accounts: accts, Log: log})
 
 	started := time.Now().Unix()
 	if cfg.Discovery {

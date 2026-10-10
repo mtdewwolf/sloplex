@@ -17,8 +17,9 @@
 
 - Play state is kept per **account** and per **leaf item** (movie or
   episode).
-- **(sloplex)** Every valid token currently maps to a single owner account.
-  The storage is keyed by account so separate users can be added later.
+- The account is the one the request authenticated as; see
+  [accounts.md](accounts.md). Each account's watch history is separate.
+- Deleting an account deletes its play state.
 - Each leaf item has three values:
 
 | Value          | Meaning                                                   |

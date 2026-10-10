@@ -226,7 +226,8 @@ newest first. Supports paging. The default size is 50 **(sloplex)**.
 ### `GET|PUT /library/sections/{id}/refresh`
 
 Starts an asynchronous rescan of the section and returns `200` with an empty
-body.
+body. **Admins only**; other accounts get `403`; see
+[accounts.md](accounts.md).
 
 - **(sloplex)** If a scan of that section is already running, this is a no-op
   that still returns `200`.

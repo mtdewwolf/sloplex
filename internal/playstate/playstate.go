@@ -77,6 +77,14 @@ func (s *Store) All(account int) map[int]State {
 	return out
 }
 
+// DeleteAccount removes all state of an account.
+func (s *Store) DeleteAccount(account int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.d.Accounts, account)
+	return s.saveLocked()
+}
+
 // Update applies fn to the state of each item and saves the result. States
 // that become zero are dropped.
 func (s *Store) Update(account int, items []int, fn func(*State)) error {
@@ -96,6 +104,10 @@ func (s *Store) Update(account int, items []int, fn func(*State)) error {
 			m[id] = st
 		}
 	}
+	return s.saveLocked()
+}
+
+func (s *Store) saveLocked() error {
 	if s.path == "" {
 		return nil
 	}

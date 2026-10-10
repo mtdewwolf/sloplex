@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"time"
+
+	"github.com/mtdewwolf/sloplex/internal/accounts"
 )
 
 const tokenHeader = "X-Plex-Token"
@@ -34,42 +37,62 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
-// authenticator checks local access tokens. See docs/spec/auth.md.
+// principal is who a request is authenticated as.
+type principal struct {
+	AccountID int
+	// TokenID is the issued token used, or 0 for an owner master token or a
+	// trusted network.
+	TokenID int
+}
+
+type principalKey struct{}
+
+func principalOf(r *http.Request) (principal, bool) {
+	p, ok := r.Context().Value(principalKey{}).(principal)
+	return p, ok
+}
+
+// authenticator resolves tokens to accounts. See docs/spec/auth.md.
 type authenticator struct {
-	tokens   [][]byte
+	master   [][]byte
+	accounts *accounts.Store
 	networks []netip.Prefix
 	public   map[string]bool
 }
 
-func newAuthenticator(tokens []string, networks []netip.Prefix) *authenticator {
-	a := &authenticator{networks: networks, public: map[string]bool{"/identity": true}}
-	for _, t := range tokens {
+func newAuthenticator(master []string, networks []netip.Prefix, accts *accounts.Store) *authenticator {
+	a := &authenticator{accounts: accts, networks: networks, public: map[string]bool{
+		"/identity":           true,
+		"/sloplex/auth/login": true,
+	}}
+	for _, t := range master {
 		if t != "" {
-			a.tokens = append(a.tokens, []byte(t))
+			a.master = append(a.master, []byte(t))
 		}
 	}
 	return a
 }
 
-func (a *authenticator) allowed(r *http.Request) bool {
-	if a.public[r.URL.Path] {
-		return true
-	}
-	if a.trustedPeer(r.RemoteAddr) {
-		return true
-	}
+// resolve returns the principal for a request's token, if valid.
+func (a *authenticator) resolve(r *http.Request) (principal, bool) {
 	tok := r.Header.Get(tokenHeader)
 	if tok == "" {
 		tok = r.URL.Query().Get(tokenHeader)
 	}
 	if tok == "" {
-		return false
+		return principal{}, false
 	}
 	ok := 0
-	for _, t := range a.tokens {
+	for _, t := range a.master {
 		ok |= subtle.ConstantTimeCompare([]byte(tok), t)
 	}
-	return ok == 1
+	if ok == 1 {
+		return principal{AccountID: accounts.OwnerID}, true
+	}
+	if acct, t, found := a.accounts.Lookup(tok); found {
+		return principal{AccountID: acct.ID, TokenID: t.ID}, true
+	}
+	return principal{}, false
 }
 
 func (a *authenticator) trustedPeer(remote string) bool {
@@ -95,7 +118,13 @@ func (a *authenticator) trustedPeer(remote string) bool {
 
 func (a *authenticator) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !a.allowed(r) {
+		p, ok := a.resolve(r)
+		if !ok && a.trustedPeer(r.RemoteAddr) {
+			p, ok = principal{AccountID: accounts.OwnerID}, true
+		}
+		if ok {
+			r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
+		} else if !a.public[r.URL.Path] {
 			http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
 			return
 		}

@@ -31,7 +31,15 @@ type MediaContainer struct {
 
 	Directory []Directory `xml:"Directory" json:"Directory,omitempty"`
 	// Metadata elements take their XML name from Metadata.XMLName (e.g. "Video").
-	Metadata []Metadata `json:"Metadata,omitempty"`
+	Metadata []Metadata    `json:"Metadata,omitempty"`
+	Account  []AccountElem `xml:"Account" json:"Account,omitempty"`
+}
+
+// AccountElem is an entry of GET /accounts.
+type AccountElem struct {
+	ID   int    `xml:"id,attr" json:"id"`
+	Key  string `xml:"key,attr" json:"key"`
+	Name string `xml:"name,attr" json:"name"`
 }
 
 // Bool encodes as "1"/"0" in XML attributes and true/false in JSON.
@@ -155,7 +163,7 @@ func wantsJSON(r *http.Request) bool {
 
 // writeContainer encodes mc as XML or JSON according to the Accept header.
 func writeContainer(w http.ResponseWriter, r *http.Request, mc MediaContainer) {
-	mc.Size = len(mc.Directory) + len(mc.Metadata)
+	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account)
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(struct {

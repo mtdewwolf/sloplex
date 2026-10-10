@@ -20,6 +20,7 @@ Sloplex is a standalone product:
 | Server root, `/identity`           | ✅                                       |
 | GDM LAN discovery (UDP 32414)      | ✅ answers `M-SEARCH`                    |
 | Local token auth, trusted CIDRs    | ✅                                       |
+| Multiple users                     | ✅ accounts, passwords, per-device tokens, per-user watch history |
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
@@ -30,7 +31,7 @@ Sloplex is a standalone product:
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
 | Transcoding (HLS/DASH)             | ⏳                                       |
-| Multiple users                     | ⏳ play state is already per account     |
+| Per-user library restrictions      | ⏳                                       |
 
 ## Quick start
 
@@ -54,6 +55,36 @@ curl -H "X-Plex-Token: $TOKEN" localhost:32400/library/sections
 curl -H "X-Plex-Token: $TOKEN" -H "Accept: application/json" localhost:32400/library/sections/1/all
 ```
 
+### Users
+
+The first start creates an **owner** account with no password. The token in
+`data/identity.json` always acts as the owner, and it is also the recovery key
+if every password is lost.
+
+To give the owner a password, and to add someone else:
+
+```sh
+curl -X PUT -H "X-Plex-Token: $TOKEN" -d '{"new":"a-good-password"}' localhost:32400/sloplex/account/password
+curl -X POST -H "X-Plex-Token: $TOKEN" -d '{"name":"alice","password":"wonderland"}' localhost:32400/sloplex/accounts
+```
+
+Each person logs in to get their own token:
+
+```sh
+curl -X POST -d '{"username":"alice","password":"wonderland","device":"Phone"}' localhost:32400/sloplex/auth/login
+```
+
+Watch history, On Deck, and the unwatched filter are tracked separately for
+each account.
+
+- Only admins can refresh libraries or manage accounts.
+- For a device where typing a password is awkward, an admin can issue a token
+  with `POST /sloplex/accounts/{id}/tokens`.
+
+The full API is in [docs/spec/accounts.md](docs/spec/accounts.md).
+
+### Libraries
+
 TV libraries expect `<root>/<Show Name (Year)>/Season NN/<file with S01E02>`.
 See "Show sections" in [docs/spec/http-api.md](docs/spec/http-api.md) for the
 full naming rules.
@@ -75,10 +106,10 @@ Install ffmpeg (which includes `ffprobe`) to get two extras:
 |-------------------|----------------|-----------------------------------------------------------|
 | `friendlyName`    | hostname       | The name shown to clients                                 |
 | `listen`          | `:32400`       | HTTP listen address                                       |
-| `dataDir`         | `data`         | Holds `identity.json`, `library.json`, `playstate.json`, `cache/` |
+| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `cache/` |
 | `discovery`       | `true`         | Answer GDM searches on UDP 32414                          |
-| `tokens`          | `[]`           | Extra accepted tokens                                     |
-| `allowedNetworks` | `[]`           | CIDRs that skip token auth                                |
+| `tokens`          | `[]`           | Extra owner master tokens                                 |
+| `allowedNetworks` | `[]`           | CIDRs that may skip tokens; tokenless requests act as the owner |
 | `ffprobe`         | `""`           | ffprobe path; `""` searches `PATH`, `"-"` disables probing |
 | `ffmpeg`          | `""`           | ffmpeg path for episode thumbnails; `""` searches `PATH`, `"-"` disables |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
@@ -88,7 +119,8 @@ Install ffmpeg (which includes `ffprobe`) to get two extras:
 ```
 cmd/sloplex/        entrypoint
 internal/config/    config file loading and validation
-internal/identity/  machine identifier and token persistence
+internal/identity/  machine identifier and owner master token
+internal/accounts/  user accounts, password hashes, issued tokens
 internal/library/   section/item store, filename parsing, scanner
 internal/playstate/ per-account watched/resume state
 internal/probe/     ffprobe wrapper

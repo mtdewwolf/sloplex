@@ -43,3 +43,15 @@ func TestUpdatePersists(t *testing.T) {
 		t.Errorf("All = %+v, want 2 entries", all)
 	}
 }
+
+func TestDeleteAccount(t *testing.T) {
+	s, _ := Open("")
+	_ = s.Update(1, []int{10}, func(st *State) { st.ViewCount = 1 })
+	_ = s.Update(2, []int{10}, func(st *State) { st.ViewCount = 3 })
+	if err := s.DeleteAccount(2); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.All(2)) != 0 || s.Get(1, 10).ViewCount != 1 {
+		t.Errorf("after delete: account 2 = %v, account 1 = %+v", s.All(2), s.Get(1, 10))
+	}
+}

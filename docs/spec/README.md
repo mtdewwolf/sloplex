@@ -33,6 +33,7 @@ source.
 |----------------------------|------------------------------------------------------------|
 | [http-api.md](http-api.md) | Transport, content negotiation, MediaContainer, endpoints  |
 | [auth.md](auth.md)         | Local token authentication                                 |
+| [accounts.md](accounts.md) | Accounts, passwords, tokens, permissions, management API   |
 | [discovery.md](discovery.md) | GDM LAN discovery                                        |
 | [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
 | [artwork.md](artwork.md)   | Posters, backgrounds, frame grabs, image resizing          |

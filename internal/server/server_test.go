@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/accounts"
 	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
@@ -77,7 +78,11 @@ func startServer(t *testing.T, opts Options, store *library.Store, sc *library.S
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { cancel(); sc.Wait() })
 	art := artwork.New(filepath.Join(t.TempDir(), "cache"), ffmpeg)
-	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art}).Handler())
+	accts, err := accounts.Open("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(New(ctx, opts, Deps{Store: store, Scanner: sc, Play: mustPlay(t), Art: art, Accounts: accts}).Handler())
 	t.Cleanup(srv.Close)
 	return srv
 }

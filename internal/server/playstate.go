@@ -12,11 +12,12 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/playstate"
 )
 
-// ownerAccount is the account every token maps to until users exist.
-const ownerAccount = 1
-
-// account returns the play-state account of a request.
-func (s *Server) account(*http.Request) int { return ownerAccount }
+// account returns the account a request is authenticated as, or 0 for an
+// unauthenticated request to a public endpoint.
+func (s *Server) account(r *http.Request) int {
+	p, _ := principalOf(r)
+	return p.AccountID
+}
 
 // completeRatio is the share of the duration after which an item counts as
 // watched.

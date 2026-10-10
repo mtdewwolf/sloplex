@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/accounts"
 	"github.com/mtdewwolf/sloplex/internal/artwork"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
@@ -32,22 +33,25 @@ type Options struct {
 
 // Deps are the services a Server uses.
 type Deps struct {
-	Store   *library.Store
-	Scanner *library.Scanner
-	Play    *playstate.Store
-	Art     *artwork.Service
-	Log     *slog.Logger // optional
+	Store    *library.Store
+	Scanner  *library.Scanner
+	Play     *playstate.Store
+	Art      *artwork.Service
+	Accounts *accounts.Store
+	Log      *slog.Logger // optional
 }
 
 // Server serves the HTTP API.
 type Server struct {
-	opts    Options
-	store   *library.Store
-	scanner *library.Scanner
-	play    *playstate.Store
-	art     *artwork.Service
-	log     *slog.Logger
-	auth    *authenticator
+	opts     Options
+	store    *library.Store
+	scanner  *library.Scanner
+	play     *playstate.Store
+	art      *artwork.Service
+	accounts *accounts.Store
+	logins   *loginLimiter
+	log      *slog.Logger
+	auth     *authenticator
 	// baseCtx is the parent of background work started by requests, such as
 	// scans, which must outlive the request.
 	baseCtx context.Context
@@ -61,7 +65,8 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	}
 	return &Server{
 		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
-		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks),
+		accounts: d.Accounts, logins: newLoginLimiter(),
+		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts),
 		baseCtx: ctx, started: time.Now(),
 	}
 }
@@ -76,8 +81,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /library/sections/{id}", s.handleSection)
 	mux.HandleFunc("GET /library/sections/{id}/all", s.handleSectionAll)
 	mux.HandleFunc("GET /library/sections/{id}/recentlyAdded", s.handleRecentlyAdded)
-	mux.HandleFunc("GET /library/sections/{id}/refresh", s.handleRefresh)
-	mux.HandleFunc("PUT /library/sections/{id}/refresh", s.handleRefresh)
+	mux.HandleFunc("GET /library/sections/{id}/refresh", s.requireAdmin(s.handleRefresh))
+	mux.HandleFunc("PUT /library/sections/{id}/refresh", s.requireAdmin(s.handleRefresh))
 	mux.HandleFunc("GET /library/recentlyAdded", s.handleRecentlyAdded)
 	mux.HandleFunc("GET /library/metadata/{id}", s.handleMetadata)
 	mux.HandleFunc("GET /library/metadata/{id}/children", s.handleChildren)
@@ -88,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /library/metadata/{id}/"+kind+"/{ts}", s.handleImage(kind))
 	}
 	mux.HandleFunc("GET /photo/:/transcode", s.handlePhotoTranscode)
+	s.accountRoutes(mux)
 	mux.HandleFunc("GET /library/onDeck", s.handleOnDeck)
 	mux.HandleFunc("GET /library/sections/{id}/onDeck", s.handleOnDeck)
 	for path, h := range map[string]http.HandlerFunc{
