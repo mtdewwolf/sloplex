@@ -35,7 +35,11 @@ type Config struct {
 	// PATH, "-" disables it.
 	FFmpeg string `json:"ffmpeg"`
 	// MaxTranscodes limits concurrent transcodes.
-	MaxTranscodes int       `json:"maxTranscodes"`
+	MaxTranscodes int `json:"maxTranscodes"`
+	// Hwaccel selects hardware transcoding: none, auto, vaapi, qsv, nvenc
+	// or videotoolbox. HwaccelDevice is the DRM node for vaapi and qsv.
+	Hwaccel       string    `json:"hwaccel"`
+	HwaccelDevice string    `json:"hwaccelDevice"`
 	Libraries     []Library `json:"libraries"`
 }
 
@@ -54,6 +58,8 @@ func Default() Config {
 		DataDir:       "data",
 		Discovery:     true,
 		MaxTranscodes: 2,
+		Hwaccel:       "auto",
+		HwaccelDevice: "/dev/dri/renderD128",
 	}
 }
 
@@ -92,6 +98,11 @@ func (c Config) Validate() error {
 	}
 	if c.MaxTranscodes < 1 {
 		return errors.New("maxTranscodes must be at least 1")
+	}
+	switch c.Hwaccel {
+	case "none", "auto", "vaapi", "qsv", "nvenc", "videotoolbox":
+	default:
+		return fmt.Errorf("hwaccel %q: want none, auto, vaapi, qsv, nvenc or videotoolbox", c.Hwaccel)
 	}
 	seen := map[string]bool{}
 	for i, lib := range c.Libraries {

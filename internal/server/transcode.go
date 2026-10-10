@@ -25,6 +25,7 @@ func (s *Server) transcodeRoutes(mux *http.ServeMux) {
 		mux.HandleFunc(m+transcodeBase+"/ping", s.handleTranscodePing)
 	}
 	mux.HandleFunc("GET /transcode/sessions", s.requireAdmin(s.handleTranscodeSessions))
+	mux.HandleFunc("GET /sloplex/transcoder", s.requireAdmin(s.handleTranscoderInfo))
 }
 
 // transcodeTarget resolves path, mediaIndex and partIndex into a request.
@@ -194,8 +195,26 @@ func (s *Server) handleTranscodeSessions(w http.ResponseWriter, r *http.Request)
 		mc.TranscodeSession = append(mc.TranscodeSession, TranscodeSession{
 			Key: info.ID, RatingKey: strconv.Itoa(info.ItemID), Protocol: info.Protocol,
 			VideoDecision: v, AudioDecision: a, Width: info.Plan.Width, Height: info.Plan.Height,
-			Complete: Bool(info.Complete),
+			Complete:                Bool(info.Complete),
+			TranscodeHwEncoding:     info.Pipeline.Accel,
+			TranscodeHwFullPipeline: Bool(info.Pipeline.Accel != "" && info.Pipeline.Full),
 		})
 	}
 	writeContainer(w, r, mc)
+}
+
+func (s *Server) handleTranscoderInfo(w http.ResponseWriter, r *http.Request) {
+	hw := s.tc.HW()
+	accel := hw.Accel
+	if accel == "" {
+		accel = "none"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"available":     s.tc.Available(),
+		"hwaccel":       accel,
+		"encoder":       transcode.Encoder(hw.Accel),
+		"device":        hw.Device,
+		"requested":     s.tc.Requested(),
+		"maxTranscodes": s.tc.MaxTranscodes(),
+	})
 }

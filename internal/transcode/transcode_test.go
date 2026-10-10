@@ -43,7 +43,7 @@ func TestDecide(t *testing.T) {
 func TestArgs(t *testing.T) {
 	r := Request{Input: "/m/a.mkv", Offset: 90.5, MaxWidth: 1280, MaxHeight: 720, MaxBitrate: 3000,
 		Source: probe.Info{VideoCodec: "hevc", Width: 1920, Height: 1080, AudioCodec: "dts", AudioChannels: 6}}
-	hls := strings.Join(Args(r, Decide(r), Output{HLSDir: "/tmp/s"}), " ")
+	hls := strings.Join(Args(r, Decide(r), Output{HLSDir: "/tmp/s"}, Pipeline{}), " ")
 	for _, want := range []string{
 		"-ss 90.500 -i /m/a.mkv", "-map 0:a:0?", "-c:v libx264", "-maxrate 3000k -bufsize 6000k",
 		"min(iw\\,1280)", "-force_key_frames expr:gte(t,n_forced*4)", "-c:a aac -ac 2",
@@ -54,7 +54,7 @@ func TestArgs(t *testing.T) {
 		}
 	}
 	cp := Request{Input: "/m/b.mp4", Source: probe.Info{VideoCodec: "h264", Width: 1280, Height: 720, AudioCodec: "aac", AudioChannels: 2}}
-	mp4 := Args(cp, Decide(cp), Output{})
+	mp4 := Args(cp, Decide(cp), Output{}, Pipeline{})
 	if !slices.Contains(mp4, "copy") || slices.Contains(mp4, "-ss") || mp4[len(mp4)-1] != "pipe:1" || slices.Contains(mp4, "-force_key_frames") {
 		t.Errorf("copy MP4 args = %v", mp4)
 	}
@@ -81,7 +81,7 @@ var clipInfo = probe.Info{VideoCodec: "mpeg4", Width: 640, Height: 360, AudioCod
 func TestHLSSession(t *testing.T) {
 	ffmpeg, path := clip(t, "10")
 	dir := filepath.Join(t.TempDir(), "transcode")
-	m, err := New(ffmpeg, dir, 1, nil)
+	m, err := New(Options{FFmpeg: ffmpeg, Dir: dir, MaxTranscodes: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestHLSSession(t *testing.T) {
 
 func TestIdleReaper(t *testing.T) {
 	ffmpeg, path := clip(t, "2")
-	m, err := New(ffmpeg, filepath.Join(t.TempDir(), "tc"), 2, nil)
+	m, err := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc"), MaxTranscodes: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestIdleReaper(t *testing.T) {
 
 func TestStreamMP4(t *testing.T) {
 	ffmpeg, path := clip(t, "3")
-	m, err := New(ffmpeg, filepath.Join(t.TempDir(), "tc"), 1, nil)
+	m, err := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc"), MaxTranscodes: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestStreamMP4(t *testing.T) {
 	}
 
 	// Without ffmpeg everything is unavailable.
-	none, _ := New("", filepath.Join(t.TempDir(), "tc2"), 1, nil)
+	none, _ := New(Options{Dir: filepath.Join(t.TempDir(), "tc2"), MaxTranscodes: 1})
 	defer none.Close()
 	if _, err := none.StartHLS(1, "", 1, Request{}); !errors.Is(err, ErrUnavailable) {
 		t.Errorf("no ffmpeg = %v", err)

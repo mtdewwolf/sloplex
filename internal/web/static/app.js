@@ -437,6 +437,7 @@ async function viewAdmin() {
   // Admins see every section, so this is the full list.
   state.allSections = state.sections;
   const accounts = (await api("GET", "/sloplex/accounts")).accounts || [];
+  const tc = await api("GET", "/sloplex/transcoder").catch(() => null);
 
   const rows = accounts.map((a) => el("tr", {},
     el("td", {}, el("strong", { text: a.name }), a.id === 1 ? el("div", { class: "muted", text: "owner" }) : null),
@@ -474,7 +475,18 @@ async function viewAdmin() {
       el("button", { class: "primary", type: "button", text: "New account", onclick: () => editAccount(null) })),
     el("h2", { text: "Libraries" }),
     state.sections.length ? refresh : el("p", { class: "muted", text: "No libraries configured." }),
+    el("h2", { text: "Transcoding" }),
+    el("p", { id: "transcoder", text: transcoderSummary(tc) }),
     el("div", { id: "admin-panel" }));
+}
+
+function transcoderSummary(tc) {
+  if (!tc) return "Unknown.";
+  if (!tc.available) return "Unavailable: ffmpeg was not found.";
+  const hw = tc.hwaccel === "none"
+    ? `Software (${tc.encoder})` + (tc.requested !== "none" ? `; no working hardware encoder found (requested: ${tc.requested})` : "")
+    : `Hardware: ${tc.hwaccel} (${tc.encoder})` + (tc.device ? ` on ${tc.device}` : "");
+  return `${hw} · up to ${tc.maxTranscodes} at once`;
 }
 
 function editAccount(a) {

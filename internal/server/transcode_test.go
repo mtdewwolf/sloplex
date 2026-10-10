@@ -123,7 +123,8 @@ func TestTranscodeHLS(t *testing.T) {
 		t.Fatalf("sessions = %d", n)
 	}
 	ts := list.MediaContainer.TranscodeSession[0]
-	if ts.Key != m[1] || ts.RatingKey != clip.RatingKey || ts.VideoDecision != "transcode" || ts.AudioDecision != "transcode" || ts.Protocol != "hls" {
+	if ts.Key != m[1] || ts.RatingKey != clip.RatingKey || ts.VideoDecision != "transcode" || ts.AudioDecision != "transcode" ||
+		ts.Protocol != "hls" || ts.TranscodeHwEncoding != "" || ts.TranscodeHwFullPipeline {
 		t.Errorf("session = %+v", ts)
 	}
 	f.createUser(t, "alice", "wonderland", false)
@@ -182,5 +183,21 @@ func TestTranscodeUnavailable(t *testing.T) {
 	heat := f.find(t, "/library/sections/1/all", "Heat")
 	if code, _, _ := f.raw(t, "/video/:/transcode/universal/start.m3u8?path="+heat.Key, testToken); code != 503 {
 		t.Errorf("without ffmpeg = %d, want 503", code)
+	}
+}
+
+func TestTranscoderInfo(t *testing.T) {
+	f := newFixture(t, Options{}) // no ffmpeg
+	var info map[string]any
+	if resp := f.api(t, "GET", "/sloplex/transcoder", testToken, nil, &info); resp.StatusCode != 200 {
+		t.Fatalf("info = %s", resp.Status)
+	}
+	if info["available"] != false || info["hwaccel"] != "none" || info["encoder"] != "libx264" ||
+		info["requested"] != "auto" || info["maxTranscodes"] != float64(1) {
+		t.Errorf("info = %v", info)
+	}
+	f.createUser(t, "alice", "wonderland", false)
+	if resp := f.api(t, "GET", "/sloplex/transcoder", f.login(t, "alice", "wonderland"), nil, nil); resp.StatusCode != 403 {
+		t.Errorf("non-admin info = %s", resp.Status)
 	}
 }

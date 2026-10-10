@@ -33,8 +33,9 @@ Sloplex is a standalone product:
 | Date-based TV episodes             | ⏳                                       |
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
-| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC (software, libx264) |
-| Hardware transcoding, subtitles in transcodes | ⏳                            |
+| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
+| Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
+| Subtitles and extra audio tracks in transcodes | ⏳                           |
 
 ## Quick start
 
@@ -124,6 +125,35 @@ Install ffmpeg (which includes `ffprobe`) to get two extras:
   `/video/:/transcode/universal/start.m3u8` (HLS) or `start.mp4`; see
   [docs/spec/transcode.md](docs/spec/transcode.md).
 
+### Hardware transcoding
+
+With `"hwaccel": "auto"` (the default), Sloplex tests each GPU encoder at
+startup with a short encode and uses the first one that works:
+
+- Linux: NVENC, then QSV, then VAAPI;
+- macOS: VideoToolbox.
+
+The result is logged and shown on the web app's Admin page.
+
+Each transcode tries the fastest path first:
+
+1. decode, scale, and encode all on the GPU;
+2. if that fails, for example because the GPU can't decode the source
+   codec, software decode with GPU encode;
+3. otherwise libx264 in software.
+
+So a missing driver or an unsupported file slows things down but never
+breaks playback.
+
+GPU access in containers:
+
+- Intel/AMD (VAAPI, QSV): pass the render node into the container, for
+  example `--device /dev/dri/renderD128`, and make sure the server's user is
+  in the `render` group.
+- NVIDIA: use the NVIDIA container runtime (`--gpus all`).
+
+Set `"hwaccel": "none"` to always use software.
+
 ## Configuration
 
 | Key               | Default        | Meaning                                                   |
@@ -137,6 +167,8 @@ Install ffmpeg (which includes `ffprobe`) to get two extras:
 | `ffprobe`         | `""`           | ffprobe path; `""` searches `PATH`, `"-"` disables probing |
 | `ffmpeg`          | `""`           | ffmpeg path for transcoding and episode thumbnails; `""` searches `PATH`, `"-"` disables |
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
+| `hwaccel`         | `"auto"`       | `auto`, `none`, `vaapi`, `qsv`, `nvenc`, or `videotoolbox` |
+| `hwaccelDevice`   | `/dev/dri/renderD128` | GPU render node for `vaapi` and `qsv`              |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout

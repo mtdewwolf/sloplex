@@ -11,8 +11,10 @@ import (
 
 // Request describes what to transcode.
 type Request struct {
-	Input  string
-	Source probe.Info
+	Input string
+	// InputFormat forces the input demuxer (e.g. "lavfi"); usually empty.
+	InputFormat string
+	Source      probe.Info
 	// Offset is the start position in seconds.
 	Offset float64
 	// MaxWidth and MaxHeight cap the output size; 0 means the source size.
@@ -83,29 +85,94 @@ const segmentSeconds = 4
 
 // Output selects the delivery format.
 type Output struct {
-	// HLSDir, when set, writes index.m3u8 and %05d.ts there. Otherwise
-	// fragmented MP4 is written to stdout.
+	// HLSDir, when set, writes index.m3u8 and %05d.ts there.
 	HLSDir string
+	// Null discards the output (used to test encoders).
+	Null bool
+	// Otherwise fragmented MP4 is written to stdout.
 }
 
-// Args builds the ffmpeg arguments for a request and plan.
-func Args(r Request, p Plan, out Output) []string {
+// Accelerators.
+const (
+	AccelVAAPI        = "vaapi"
+	AccelQSV          = "qsv"
+	AccelNVENC        = "nvenc"
+	AccelVideoToolbox = "videotoolbox"
+)
+
+var encoders = map[string]string{
+	"":                "libx264",
+	AccelVAAPI:        "h264_vaapi",
+	AccelQSV:          "h264_qsv",
+	AccelNVENC:        "h264_nvenc",
+	AccelVideoToolbox: "h264_videotoolbox",
+}
+
+// Encoder returns the ffmpeg video encoder of an accelerator ("" for
+// software).
+func Encoder(accel string) string { return encoders[accel] }
+
+// HW is the active hardware acceleration; a zero HW means software.
+type HW struct {
+	Accel  string
+	Device string
+}
+
+// Pipeline is one way to run a video encode. A zero Pipeline is software.
+type Pipeline struct {
+	Accel  string
+	Device string
+	// Full keeps frames on the GPU from decode to encode.
+	Full bool
+}
+
+func (p Pipeline) String() string {
+	switch {
+	case p.Accel == "":
+		return "software"
+	case p.Full:
+		return p.Accel + " (full)"
+	default:
+		return p.Accel + " (encode only)"
+	}
+}
+
+// Pipelines lists the pipelines to try for a plan, fastest first. Copied
+// video needs no encoder, so only the software pipeline is used.
+func Pipelines(hw HW, p Plan) []Pipeline {
+	if p.CopyVideo || hw.Accel == "" {
+		return []Pipeline{{}}
+	}
+	full := Pipeline{Accel: hw.Accel, Device: hw.Device, Full: true}
+	if hw.Accel == AccelVideoToolbox {
+		return []Pipeline{full, {}}
+	}
+	return []Pipeline{full, {Accel: hw.Accel, Device: hw.Device}, {}}
+}
+
+// Args builds the ffmpeg arguments for a request, plan and pipeline.
+func Args(r Request, p Plan, out Output, pl Pipeline) []string {
+	encode := !p.CopyVideo
 	args := []string{"-nostdin", "-hide_banner", "-loglevel", "error"}
+	if encode {
+		args = append(args, hwInputArgs(pl, r.Source.VideoCodec)...)
+	}
 	if r.Offset > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(r.Offset, 'f', 3, 64))
 	}
+	if r.InputFormat != "" {
+		args = append(args, "-f", r.InputFormat)
+	}
 	args = append(args, "-i", r.Input, "-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn")
 
-	if p.CopyVideo {
+	if !encode {
 		args = append(args, "-c:v", "copy")
 	} else {
-		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p")
-		if r.MaxWidth > 0 || r.MaxHeight > 0 {
-			args = append(args, "-vf", scaleFilter(r.MaxWidth, r.MaxHeight))
+		if vf := videoFilter(r, p, pl); vf != "" {
+			args = append(args, "-vf", vf)
 		}
-		if r.MaxBitrate > 0 {
-			args = append(args, "-maxrate", fmt.Sprintf("%dk", r.MaxBitrate), "-bufsize", fmt.Sprintf("%dk", 2*r.MaxBitrate))
-		}
+		args = append(args, "-c:v", Encoder(pl.Accel))
+		args = append(args, rateControl(r, p, pl)...)
 		if out.HLSDir != "" {
 			args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
 		}
@@ -118,7 +185,8 @@ func Args(r Request, p Plan, out Output) []string {
 		}
 	}
 
-	if out.HLSDir != "" {
+	switch {
+	case out.HLSDir != "":
 		return append(args,
 			"-f", "hls",
 			"-hls_time", strconv.Itoa(segmentSeconds),
@@ -126,8 +194,129 @@ func Args(r Request, p Plan, out Output) []string {
 			"-hls_playlist_type", "event",
 			"-hls_segment_filename", out.HLSDir+"/%05d.ts",
 			out.HLSDir+"/index.m3u8")
+	case out.Null:
+		return append(args, "-f", "null", "-")
 	}
 	return append(args, "-movflags", "frag_keyframe+empty_moov+default_base_moof", "-f", "mp4", "pipe:1")
+}
+
+// qsvDecoders maps source codecs to QSV decoders, which ffmpeg needs named
+// explicitly for full-hardware QSV decoding.
+var qsvDecoders = map[string]string{
+	"h264": "h264_qsv", "hevc": "hevc_qsv", "mpeg2video": "mpeg2_qsv",
+	"vp9": "vp9_qsv", "av1": "av1_qsv", "vc1": "vc1_qsv",
+}
+
+// hwInputArgs are the device and decoder options placed before -i.
+func hwInputArgs(pl Pipeline, srcCodec string) []string {
+	switch {
+	case pl.Accel == AccelVAAPI && pl.Full:
+		return []string{"-hwaccel", "vaapi", "-hwaccel_device", pl.Device, "-hwaccel_output_format", "vaapi"}
+	case pl.Accel == AccelVAAPI:
+		return []string{"-vaapi_device", pl.Device}
+	case pl.Accel == AccelQSV && pl.Full:
+		args := []string{"-hwaccel", "qsv", "-qsv_device", pl.Device, "-hwaccel_output_format", "qsv"}
+		if dec, ok := qsvDecoders[srcCodec]; ok {
+			args = append(args, "-c:v", dec)
+		}
+		return args
+	case pl.Accel == AccelNVENC && pl.Full:
+		return []string{"-hwaccel", "cuda", "-hwaccel_output_format", "cuda"}
+	case pl.Accel == AccelVideoToolbox:
+		return []string{"-hwaccel", "videotoolbox"}
+	}
+	return nil
+}
+
+// videoFilter builds the -vf chain for a pipeline.
+func videoFilter(r Request, p Plan, pl Pipeline) string {
+	if pl.Accel == "" {
+		if r.MaxWidth > 0 || r.MaxHeight > 0 {
+			return scaleFilter(r.MaxWidth, r.MaxHeight)
+		}
+		return ""
+	}
+	scale := p.Width > 0 && p.Height > 0 && (p.Width != r.Source.Width || p.Height != r.Source.Height)
+	hwScale := func(name string) string {
+		if scale {
+			return fmt.Sprintf("%s=w=%d:h=%d:format=nv12", name, p.Width, p.Height)
+		}
+		return name + "=format=nv12"
+	}
+	swScale := func(format string) string {
+		if scale {
+			return fmt.Sprintf("scale=%d:%d,format=%s", p.Width, p.Height, format)
+		}
+		return "format=" + format
+	}
+	switch {
+	case pl.Accel == AccelVAAPI && pl.Full:
+		return hwScale("scale_vaapi")
+	case pl.Accel == AccelVAAPI:
+		if scale {
+			return fmt.Sprintf("format=nv12,hwupload,scale_vaapi=w=%d:h=%d", p.Width, p.Height)
+		}
+		return "format=nv12,hwupload"
+	case pl.Accel == AccelQSV && pl.Full:
+		return hwScale("scale_qsv")
+	case pl.Accel == AccelNVENC && pl.Full:
+		return hwScale("scale_cuda")
+	case pl.Accel == AccelNVENC:
+		return swScale("yuv420p")
+	default: // qsv encode-only, videotoolbox
+		return swScale("nv12")
+	}
+}
+
+// rateControl returns the encoder's quality and bitrate options.
+func rateControl(r Request, p Plan, pl Pipeline) []string {
+	capArgs := func() []string {
+		return []string{"-maxrate", fmt.Sprintf("%dk", r.MaxBitrate), "-bufsize", fmt.Sprintf("%dk", 2*r.MaxBitrate)}
+	}
+	target := func() []string {
+		return append([]string{"-b:v", fmt.Sprintf("%dk", r.MaxBitrate*8/10)}, capArgs()...)
+	}
+	switch pl.Accel {
+	case "":
+		out := []string{"-preset", "veryfast", "-crf", "21", "-pix_fmt", "yuv420p"}
+		if r.MaxBitrate > 0 {
+			out = append(out, capArgs()...)
+		}
+		return out
+	case AccelVAAPI:
+		if r.MaxBitrate > 0 {
+			return target()
+		}
+		return []string{"-qp", "23"}
+	case AccelQSV:
+		out := []string{"-preset", "veryfast", "-forced_idr", "1"}
+		if r.MaxBitrate > 0 {
+			return append(out, target()...)
+		}
+		return append(out, "-global_quality", "23")
+	case AccelNVENC:
+		out := []string{"-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "0", "-forced-idr", "1"}
+		if r.MaxBitrate > 0 {
+			out = append(out, capArgs()...)
+		}
+		return out
+	case AccelVideoToolbox:
+		kbps := r.MaxBitrate
+		if kbps == 0 {
+			switch h := p.Height; {
+			case h > 0 && h <= 480:
+				kbps = 1500
+			case h > 0 && h <= 720:
+				kbps = 3000
+			case h > 0 && h <= 1080:
+				kbps = 6000
+			default:
+				kbps = 15000
+			}
+		}
+		return []string{"-realtime", "1", "-b:v", fmt.Sprintf("%dk", kbps)}
+	}
+	return nil
 }
 
 // scaleFilter fits the video inside the box without upscaling, with even

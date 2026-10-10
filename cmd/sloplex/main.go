@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -111,14 +112,21 @@ func run(configPath string, log *slog.Logger) error {
 		}
 	}
 	art := artwork.New(filepath.Join(cfg.DataDir, "cache"), ffmpeg)
-	tc, err := transcode.New(ffmpeg, filepath.Join(cfg.DataDir, "transcode"), cfg.MaxTranscodes, log)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var hw transcode.HW
+	if ffmpeg != "" {
+		hw = transcode.Detect(ctx, ffmpeg, cfg.Hwaccel, cfg.HwaccelDevice, runtime.GOOS, log)
+	}
+	tc, err := transcode.New(transcode.Options{
+		FFmpeg: ffmpeg, Dir: filepath.Join(cfg.DataDir, "transcode"), MaxTranscodes: cfg.MaxTranscodes,
+		HW: hw, Requested: cfg.Hwaccel, Log: log,
+	})
 	if err != nil {
 		return err
 	}
 	defer tc.Close()
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	scanner := library.NewScanner(store, prober, log)
 	defer scanner.Wait()

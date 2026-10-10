@@ -29,12 +29,14 @@ var (
 
 // Manager runs and tracks transcodes.
 type Manager struct {
-	ffmpeg  string
-	dir     string
-	max     int
-	log     *slog.Logger
-	idle    time.Duration
-	pollGap time.Duration
+	ffmpeg    string
+	dir       string
+	max       int
+	hw        HW
+	requested string
+	log       *slog.Logger
+	idle      time.Duration
+	pollGap   time.Duration
 
 	mu       sync.Mutex
 	sessions map[string]*Session
@@ -56,13 +58,15 @@ type Session struct {
 	done      chan struct{}
 	err       error // set before done is closed
 	lastTouch atomic.Int64
+	pipeline  atomic.Pointer[Pipeline]
 }
 
 type streamInfo struct {
-	id      string
-	itemID  int
-	plan    Plan
-	started time.Time
+	id       string
+	itemID   int
+	plan     Plan
+	started  time.Time
+	pipeline Pipeline // guarded by Manager.mu
 }
 
 // Info describes a running transcode for listings.
@@ -71,23 +75,37 @@ type Info struct {
 	ItemID   int
 	Protocol string
 	Plan     Plan
+	Pipeline Pipeline
 	Complete bool
 }
 
-// New returns a Manager writing HLS sessions under dir. An empty ffmpeg
-// disables transcoding. The directory is cleared of leftovers.
-func New(ffmpeg, dir string, maxTranscodes int, log *slog.Logger) (*Manager, error) {
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
+// Options configures a Manager.
+type Options struct {
+	// FFmpeg is the ffmpeg binary; empty disables transcoding.
+	FFmpeg string
+	// Dir holds HLS sessions. It is cleared of leftovers on start.
+	Dir           string
+	MaxTranscodes int
+	// HW is the detected hardware acceleration (zero for software), and
+	// Requested the configured hwaccel value, for reporting.
+	HW        HW
+	Requested string
+	Log       *slog.Logger
+}
+
+// New returns a Manager.
+func New(o Options) (*Manager, error) {
+	if o.Log == nil {
+		o.Log = slog.New(slog.DiscardHandler)
 	}
-	if maxTranscodes < 1 {
-		maxTranscodes = 1
+	if o.MaxTranscodes < 1 {
+		o.MaxTranscodes = 1
 	}
-	if err := os.RemoveAll(dir); err != nil {
+	if err := os.RemoveAll(o.Dir); err != nil {
 		return nil, err
 	}
 	m := &Manager{
-		ffmpeg: ffmpeg, dir: dir, max: maxTranscodes, log: log,
+		ffmpeg: o.FFmpeg, dir: o.Dir, max: o.MaxTranscodes, hw: o.HW, requested: o.Requested, log: o.Log,
 		idle: 2 * time.Minute, pollGap: 100 * time.Millisecond,
 		sessions: map[string]*Session{}, streams: map[*streamInfo]struct{}{},
 		stop: make(chan struct{}),
@@ -102,6 +120,15 @@ func (m *Manager) SetIdleTimeout(d time.Duration) { m.mu.Lock(); m.idle = d; m.m
 
 // Available reports whether ffmpeg is configured.
 func (m *Manager) Available() bool { return m != nil && m.ffmpeg != "" }
+
+// HW returns the active hardware acceleration.
+func (m *Manager) HW() HW { return m.hw }
+
+// Requested returns the configured hwaccel value.
+func (m *Manager) Requested() string { return m.requested }
+
+// MaxTranscodes returns the concurrency limit.
+func (m *Manager) MaxTranscodes() int { return m.max }
 
 func newID() string {
 	b := make([]byte, 16)
@@ -162,30 +189,57 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
-	cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, p, Output{HLSDir: s.dir})...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
-	if err := cmd.Start(); err != nil {
-		cancel()
-		m.mu.Unlock()
-		os.RemoveAll(s.dir)
-		return nil, err
-	}
+	attempts := Pipelines(m.hw, p)
+	s.pipeline.Store(&attempts[0])
 	m.sessions[s.ID] = s
 	m.mu.Unlock()
 	m.cleanup(replaced)
 
 	m.log.Info("transcode started", "session", s.ID, "item", itemID, "protocol", "hls",
-		"video", decision(p.CopyVideo), "audio", audioDecision(p))
-	go func() {
-		err := cmd.Wait()
-		if err != nil && ctx.Err() == nil {
-			s.err = fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(stderr.String()))
-			m.log.Warn("transcode failed", "session", s.ID, "err", s.err)
-		}
-		close(s.done)
-	}()
+		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String())
+	go m.runHLS(ctx, s, r, attempts)
 	return s, nil
+}
+
+// runHLS runs the pipelines in order until one succeeds. It moves on only
+// when a pipeline fails before writing any segment.
+func (m *Manager) runHLS(ctx context.Context, s *Session, r Request, attempts []Pipeline) {
+	defer close(s.done)
+	for i, pl := range attempts {
+		s.pipeline.Store(&pl)
+		cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, s.Plan, Output{HLSDir: s.dir}, pl)...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
+		err := cmd.Run()
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		fail := ffmpegError(err, &stderr)
+		if hasSegments(s.dir) || i == len(attempts)-1 {
+			s.err = fail
+			m.log.Warn("transcode failed", "session", s.ID, "pipeline", pl.String(), "err", fail)
+			return
+		}
+		m.log.Warn("transcode pipeline failed, falling back", "session", s.ID,
+			"pipeline", pl.String(), "next", attempts[i+1].String(), "err", fail)
+		clearDir(s.dir)
+	}
+}
+
+func ffmpegError(err error, stderr *bytes.Buffer) error {
+	return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(stderr.String()))
+}
+
+func hasSegments(dir string) bool {
+	matches, _ := filepath.Glob(filepath.Join(dir, "*.ts"))
+	return len(matches) > 0
+}
+
+func clearDir(dir string) {
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		os.RemoveAll(filepath.Join(dir, e.Name()))
+	}
 }
 
 // cleanup waits for sessions to exit and removes their files.
@@ -253,10 +307,10 @@ func (m *Manager) List() []Info {
 			complete = true
 		default:
 		}
-		out = append(out, Info{ID: s.ID, ItemID: s.ItemID, Protocol: "hls", Plan: s.Plan, Complete: complete})
+		out = append(out, Info{ID: s.ID, ItemID: s.ItemID, Protocol: "hls", Plan: s.Plan, Pipeline: *s.pipeline.Load(), Complete: complete})
 	}
 	for st := range m.streams {
-		out = append(out, Info{ID: st.id, ItemID: st.itemID, Protocol: "http", Plan: st.plan})
+		out = append(out, Info{ID: st.id, ItemID: st.itemID, Protocol: "http", Plan: st.plan, Pipeline: st.pipeline})
 	}
 	return out
 }
@@ -404,22 +458,64 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 		m.mu.Unlock()
 	}()
 
+	attempts := Pipelines(m.hw, p)
+	m.log.Info("transcode started", "session", st.id, "item", itemID, "protocol", "http",
+		"video", decision(p.CopyVideo), "audio", audioDecision(p), "pipeline", attempts[0].String())
+	for i, pl := range attempts {
+		m.mu.Lock()
+		st.pipeline = pl
+		m.mu.Unlock()
+		wrote, err := m.streamOnce(ctx, r, p, pl, w, func() { ready(p) })
+		if err == nil || wrote || ctx.Err() != nil || i == len(attempts)-1 {
+			return err
+		}
+		m.log.Warn("transcode pipeline failed, falling back", "session", st.id,
+			"pipeline", pl.String(), "next", attempts[i+1].String(), "err", err)
+	}
+	return nil
+}
+
+// streamOnce runs one pipeline. wrote reports whether any output reached
+// w; ready is called just before the first write. A client disconnect is
+// not an error.
+func (m *Manager) streamOnce(ctx context.Context, r Request, p Plan, pl Pipeline, w io.Writer, ready func()) (wrote bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, p, Output{})...)
+	cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, p, Output{}, pl)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := cmd.Start(); err != nil {
-		return err
+		return false, err
 	}
-	m.log.Info("transcode started", "session", st.id, "item", itemID, "protocol", "http",
-		"video", decision(p.CopyVideo), "audio", audioDecision(p))
-	ready(p)
-	_, copyErr := io.Copy(w, stdout)
+
+	// Hold back the first chunk: if this pipeline fails before producing
+	// anything, the caller can still try the next one.
+	buf := make([]byte, 32<<10)
+	var n int
+	var rerr error
+	for n == 0 && rerr == nil {
+		n, rerr = stdout.Read(buf)
+	}
+	if n == 0 {
+		waitErr := cmd.Wait()
+		if ctx.Err() != nil {
+			return false, nil
+		}
+		if waitErr == nil {
+			waitErr = errors.New("no output")
+		}
+		return false, ffmpegError(waitErr, &stderr)
+	}
+
+	ready()
+	_, copyErr := w.Write(buf[:n])
+	if copyErr == nil {
+		_, copyErr = io.Copy(w, stdout)
+	}
 	// Decide before cancelling: afterwards ctx.Err() is always set.
 	clientGone := copyErr != nil || ctx.Err() != nil
 	if clientGone {
@@ -427,12 +523,12 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 	}
 	waitErr := cmd.Wait()
 	if clientGone {
-		return nil
+		return true, nil
 	}
 	if waitErr != nil {
-		return fmt.Errorf("ffmpeg: %w: %s", waitErr, strings.TrimSpace(stderr.String()))
+		return true, ffmpegError(waitErr, &stderr)
 	}
-	return nil
+	return true, nil
 }
 
 func decision(copy bool) string {

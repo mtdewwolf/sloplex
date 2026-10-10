@@ -4,6 +4,8 @@
   "dataDir": "data",
   "discovery": true,
   "allowedNetworks": [],
+  "hwaccel": "auto",
+  "maxTranscodes": 2,
   "libraries": [
     { "title": "Movies", "type": "movie", "paths": ["/srv/media/movies"] },
     { "title": "TV Shows", "type": "show", "paths": ["/srv/media/tv"] }

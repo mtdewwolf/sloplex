@@ -10,7 +10,12 @@
   - the session path shape `.../universal/session/{id}/base/index.m3u8`;
   - the parameters `path`, `mediaIndex`, `partIndex`, `offset`,
     `videoResolution`, `maxVideoBitrate`, `directStream`, and `session`;
-  - the `TranscodeSession` element.
+  - the `TranscodeSession` element, including its `transcodeHwEncoding` and
+    `transcodeHwFullPipeline` attributes.
+- The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
+  `-init_hw_device`, `scale_vaapi`, `scale_cuda`, `scale_qsv`, `hwupload`,
+  and the `h264_*` encoders and their rate-control options) come from
+  ffmpeg's own public documentation.
 - These are **(sloplex)**:
   - the progressive `start.mp4` endpoint;
   - capability session URLs;
@@ -47,10 +52,12 @@ play: H.264 video and AAC stereo audio. It is delivered one of two ways:
 - the source bitrate is within `maxVideoBitrate`;
 - `directStream` is not `0`.
 
-Otherwise video is encoded with `libx264 -preset veryfast -crf 21`:
+Otherwise video is encoded:
 
 - It is scaled down to fit the box, keeping the aspect ratio, with even
   dimensions.
+- It uses the hardware encoder if one is active (see **Hardware
+  acceleration**), and otherwise `libx264 -preset veryfast -crf 21`.
 - With a bitrate cap it adds `-maxrate` and `-bufsize` (2× the cap).
 - For HLS it forces key frames every 4 s.
 
@@ -64,6 +71,68 @@ are used. Subtitles are not carried.
 **Start position.** `offset`, in seconds, starts the output at that position
 of the source. Output timestamps start at 0, so clients add `offset` back
 when reporting progress.
+
+## Hardware acceleration (sloplex)
+
+### Configuration
+
+| Config key      | Values                                                   | Default |
+|-----------------|----------------------------------------------------------|---------|
+| `hwaccel`       | `none`, `auto`, `vaapi`, `qsv`, `nvenc`, `videotoolbox`  | `auto`  |
+| `hwaccelDevice` | DRM render node for `vaapi` and `qsv`                    | `/dev/dri/renderD128` |
+
+### Detection at startup
+
+The server checks which accelerator works by encoding a short test pattern.
+
+- `auto` tries these in order and uses the first that works:
+  - Linux: `nvenc`, `qsv`, `vaapi`;
+  - macOS: `videotoolbox`.
+- An explicitly named accelerator is checked the same way.
+- If nothing works, the server logs a warning and uses software encoding.
+  It never refuses to start over this.
+- The result is shown by `GET /sloplex/transcoder`.
+
+### Pipelines
+
+Each video encode tries a chain of pipelines, fastest first. It moves to the
+next one when ffmpeg fails before producing any output:
+
+1. **Full hardware:** hardware decode, scaling, and encoding. Frames stay on
+   the GPU.
+2. **Hardware encode only:** software decode and scaling, then hardware
+   encode. This covers source codecs the GPU cannot decode.
+3. **Software:** libx264.
+
+`videotoolbox` has no separate step 2, because its decoder falls back to
+software by itself.
+
+A failure after output has started is not retried. Once the client has
+data, restarting would break the stream.
+
+### Arguments
+
+| Accel        | Step 1 (full hardware)                                                         | Step 2 (encode only)                                  | Encoder and rate control |
+|--------------|--------------------------------------------------------------------------------|-------------------------------------------------------|--------------------------|
+| vaapi        | `-hwaccel vaapi -hwaccel_device D -hwaccel_output_format vaapi`, `scale_vaapi=w:h:format=nv12` | `-vaapi_device D`, `format=nv12,hwupload` (then `scale_vaapi` when scaling) | `h264_vaapi`. No cap: `-qp 23`. With a cap: `-b:v` 0.8×cap, `-maxrate`, `-bufsize` |
+| qsv          | `-hwaccel qsv -qsv_device D -hwaccel_output_format qsv` plus the matching QSV decoder (`-c:v hevc_qsv` and so on), `scale_qsv=w:h:format=nv12` | software `scale`, `format=nv12`                      | `h264_qsv -preset veryfast -forced_idr 1`. No cap: `-global_quality 23`. With a cap: as vaapi |
+| nvenc        | `-hwaccel cuda -hwaccel_output_format cuda`, `scale_cuda=w:h:format=nv12`      | software `scale`, `format=yuv420p`                    | `h264_nvenc -preset p4 -rc vbr -cq 23 -b:v 0 -forced-idr 1`. A cap adds `-maxrate` and `-bufsize` |
+| videotoolbox | `-hwaccel videotoolbox`, software `scale`, `format=nv12`                       | –                                                     | `h264_videotoolbox -realtime 1`. Bitrate is the cap, or by output height: ≤480p 1500k, ≤720p 3000k, ≤1080p 6000k, otherwise 15000k |
+
+- `w` and `h` are the planned output size. A scaler only runs when the size
+  changes, or when converting 10-bit sources to 8-bit `nv12`.
+- Every pipeline forces key frames for HLS, as in the software pipeline.
+
+### `GET /sloplex/transcoder` (admin)
+
+Returns JSON:
+
+```json
+{"available": true, "hwaccel": "vaapi", "encoder": "h264_vaapi", "device": "/dev/dri/renderD128", "requested": "auto", "maxTranscodes": 2}
+```
+
+- `hwaccel` is `"none"` when encoding in software.
+- `available` is false when ffmpeg is missing.
 
 ## Endpoints
 
@@ -153,6 +222,8 @@ transcode:
 | `audioDecision` | `copy`, `transcode`, or empty when there is no audio |
 | `width`, `height` | Output size                              |
 | `complete`      | `1` once ffmpeg has finished               |
+| `transcodeHwEncoding` | The accelerator in use (`vaapi`, `qsv`, `nvenc`, `videotoolbox`), or empty for software or copy |
+| `transcodeHwFullPipeline` | `1` when decoding, scaling, and encoding all run on the GPU |
 
 ## Lifecycle (sloplex)
 
@@ -164,7 +235,8 @@ transcode:
 
 ## Not implemented yet
 
-- Hardware encoders (VAAPI, NVENC, QSV).
+- Hardware decoding when video is copied, which is not needed.
+- Hardware tone mapping of HDR sources.
 - Subtitle burn-in.
 - Multiple audio tracks.
 - Adaptive bitrate ladders.

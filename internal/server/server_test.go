@@ -83,7 +83,7 @@ func startServer(t *testing.T, opts Options, store *library.Store, sc *library.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	tc, err := transcode.New(ffmpeg, filepath.Join(t.TempDir(), "transcode"), 1, nil)
+	tc, err := transcode.New(transcode.Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "transcode"), MaxTranscodes: 1, Requested: "auto"})
 	if err != nil {
 		t.Fatal(err)
 	}

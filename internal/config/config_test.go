@@ -35,6 +35,7 @@ func TestValidate(t *testing.T) {
 		"duplicate":   {func(c *Config) { c.Libraries = []Library{lib, lib} }, "duplicate"},
 		"bad listen":  {func(c *Config) { c.Listen = "32400" }, "listen"},
 		"bad network": {func(c *Config) { c.AllowedNetworks = []string{"10.0.0.0"} }, "allowedNetworks"},
+		"bad hwaccel": {func(c *Config) { c.Hwaccel = "cuda" }, "hwaccel"},
 	} {
 		cfg := Default()
 		tc.mut(&cfg)
