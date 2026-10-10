@@ -33,6 +33,18 @@ type MediaContainer struct {
 	// Metadata elements take their XML name from Metadata.XMLName (e.g. "Video").
 	Metadata []Metadata    `json:"Metadata,omitempty"`
 	Account  []AccountElem `xml:"Account" json:"Account,omitempty"`
+	Hub      []Hub         `xml:"Hub" json:"Hub,omitempty"`
+}
+
+// Hub groups search results of one type; see docs/spec/search.md.
+type Hub struct {
+	HubIdentifier string `xml:"hubIdentifier,attr" json:"hubIdentifier"`
+	Type          string `xml:"type,attr" json:"type"`
+	Title         string `xml:"title,attr" json:"title"`
+	Size          int    `xml:"size,attr" json:"size"`
+	More          Bool   `xml:"more,attr" json:"more"`
+	// Metadata elements take their XML name from Metadata.XMLName.
+	Metadata []Metadata `json:"Metadata,omitempty"`
 }
 
 // AccountElem is an entry of GET /accounts.
@@ -163,7 +175,7 @@ func wantsJSON(r *http.Request) bool {
 
 // writeContainer encodes mc as XML or JSON according to the Accept header.
 func writeContainer(w http.ResponseWriter, r *http.Request, mc MediaContainer) {
-	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account)
+	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account) + len(mc.Hub)
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(struct {

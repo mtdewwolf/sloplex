@@ -94,6 +94,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /photo/:/transcode", s.handlePhotoTranscode)
 	s.accountRoutes(mux)
+	mux.HandleFunc("GET /hubs/search", s.handleHubSearch)
+	mux.HandleFunc("GET /search", s.handleSearch)
+	mux.HandleFunc("GET /library/sections/{id}/search", s.handleSearch)
 	mux.HandleFunc("GET /library/onDeck", s.handleOnDeck)
 	mux.HandleFunc("GET /library/sections/{id}/onDeck", s.handleOnDeck)
 	for path, h := range map[string]http.HandlerFunc{

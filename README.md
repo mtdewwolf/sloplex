@@ -25,6 +25,7 @@ Sloplex is a standalone product:
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
+| Search                             | ✅ `/hubs/search`, `/search`, per-section; accent-insensitive, prefix matching |
 | Direct play (byte-range streaming) | ✅                                       |
 | Watched/resume state, On Deck      | ✅ scrobble, timeline, unwatched filter  |
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
@@ -129,6 +130,7 @@ internal/library/   section/item store, filename parsing, scanner
 internal/playstate/ per-account watched/resume state
 internal/probe/     ffprobe wrapper
 internal/artwork/   frame grabs and cached image resizing
+internal/search/    query folding and scoring
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder
 docs/spec/          the clean-room protocol specification

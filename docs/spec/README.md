@@ -37,6 +37,7 @@ source.
 | [discovery.md](discovery.md) | GDM LAN discovery                                        |
 | [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
 | [artwork.md](artwork.md)   | Posters, backgrounds, frame grabs, image resizing          |
+| [search.md](search.md)     | Search, hubs, matching and ranking                         |
 
 ## Conventions
 
