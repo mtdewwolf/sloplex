@@ -124,8 +124,11 @@ func TestTranscodeHLS(t *testing.T) {
 	}
 	ts := list.MediaContainer.TranscodeSession[0]
 	if ts.Key != m[1] || ts.RatingKey != clip.RatingKey || ts.VideoDecision != "transcode" || ts.AudioDecision != "transcode" ||
-		ts.Protocol != "hls" || ts.TranscodeHwEncoding != "" || ts.TranscodeHwFullPipeline {
+		ts.Protocol != "hls" || ts.TranscodeHwEncoding != "" || ts.TranscodeHwFullPipeline || ts.Throttled {
 		t.Errorf("session = %+v", ts)
+	}
+	if _, _, body := f.raw(t, "/transcode/sessions", testToken); !bytes.Contains(body, []byte(`throttled="0"`)) {
+		t.Errorf("session XML lacks throttled:\n%s", body)
 	}
 	f.createUser(t, "alice", "wonderland", false)
 	alice := f.login(t, "alice", "wonderland")
@@ -201,8 +204,12 @@ func TestTranscoderInfo(t *testing.T) {
 		t.Fatalf("info = %s", resp.Status)
 	}
 	if info["available"] != false || info["hwaccel"] != "none" || info["encoder"] != "libx264" ||
-		info["requested"] != "auto" || info["maxTranscodes"] != float64(1) {
+		info["requested"] != "auto" || info["maxTranscodes"] != float64(1) ||
+		info["x264Preset"] != "auto" || info["throttle"] != false || info["softwareLoad"] != float64(0) {
 		t.Errorf("info = %v", info)
+	}
+	if _, ok := info["benchmark"]; ok {
+		t.Errorf("benchmark reported before one ran: %v", info)
 	}
 	f.createUser(t, "alice", "wonderland", false)
 	if resp := f.api(t, "GET", "/sloplex/transcoder", f.login(t, "alice", "wonderland"), nil, nil); resp.StatusCode != 403 {

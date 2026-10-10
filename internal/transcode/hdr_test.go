@@ -33,13 +33,23 @@ func TestArgsHDR(t *testing.T) {
 	hlg := Request{Input: "in.mkv", Source: probe.Info{VideoCodec: "hevc", Width: 1920, Height: 1080, HDR: probe.HDRHLG},
 		MaxWidth: 1280, MaxHeight: 720, Burn: &Burn{File: "/s/x.srt"}}
 	got = strings.Join(Args(hlg, Decide(hlg), Output{}, Pipeline{}), " ")
-	if !strings.Contains(got, "zscale=tin=arib-std-b67") || !strings.Contains(got, "format=yuv420p,subtitles=filename=burn.srt,scale=") {
-		t.Errorf("HLG + text burn: tone map must come first, then subtitles, then scaling:\n%s", got)
+	if !strings.Contains(got, "-vf zscale=w=1280:h=720:filter=bicubic,zscale=tin=arib-std-b67") ||
+		!strings.Contains(got, "format=yuv420p,subtitles=filename=burn.srt,scale=") {
+		t.Errorf("HLG + text burn: downscale and tone map must come first, then subtitles:\n%s", got)
 	}
 	img := Request{Input: "in.mkv", Source: hdr, Burn: &Burn{Index: 3}}
 	got = strings.Join(Args(img, Decide(img), Output{}, Pipeline{}), " ")
 	if !strings.Contains(got, "-filter_complex [0:v:0]zscale=") || !strings.Contains(got, "[sdr];[sdr][0:3]overlay=eof_action=pass[vout]") {
 		t.Errorf("HDR + image burn graph:\n%s", got)
+	}
+	if strings.Contains(got, "zscale=w=") {
+		t.Errorf("tone mapping without downscaling must not resize:\n%s", got)
+	}
+	small := Request{Input: "in.mkv", Source: hdr, MaxWidth: 640, MaxHeight: 640, Burn: &Burn{Index: 3}}
+	got = strings.Join(Args(small, Decide(small), Output{}, Pipeline{}), " ")
+	if !strings.Contains(got, "[0:v:0]zscale=w=640:h=360:filter=bicubic,zscale=tin=smpte2084") ||
+		!strings.Contains(got, "[sdr];[0:3]scale=640:360[sub];[sdr][sub]overlay=eof_action=pass") {
+		t.Errorf("downscaled HDR + image burn must scale the subtitle canvas too:\n%s", got)
 	}
 	if pls := Pipelines(HW{Accel: AccelNVENC}, p); len(pls) != 2 || pls[0].Full {
 		t.Errorf("HDR pipelines = %v, want encode-only then software", pls)
@@ -71,9 +81,13 @@ func TestToneMapping(t *testing.T) {
 		name, transfer, kind string
 		left, right          int // 10-bit limited-range luma codes
 		midMin, midMax       int
+		// maxW scales the output down, which tone maps at the smaller size.
+		maxW int
 	}{
-		{"HDR10", "smpte2084", probe.HDRPQ, 509, 723, 145, 215}, // ~100 and ~1000 nits
-		{"HLG", "arib-std-b67", probe.HDRHLG, 500, 800, 100, 200},
+		{"HDR10", "smpte2084", probe.HDRPQ, 509, 723, 145, 215, 0}, // ~100 and ~1000 nits
+		{"HLG", "arib-std-b67", probe.HDRHLG, 500, 880, 100, 200, 0},
+		{"HDR10-downscaled", "smpte2084", probe.HDRPQ, 509, 723, 145, 215, 320},
+		{"HLG-downscaled", "arib-std-b67", probe.HDRHLG, 500, 880, 100, 200, 320},
 	} {
 		src := filepath.Join(dir, tc.name+".mkv")
 		testutil.WriteHDRClip(t, ffmpeg, src, tc.transfer, tc.left, tc.right)
@@ -82,7 +96,7 @@ func TestToneMapping(t *testing.T) {
 			t.Fatalf("%s: probe HDR = %q, %v", tc.name, info.HDR, err)
 		}
 		var buf bytes.Buffer
-		if err := m.Stream(context.Background(), 1, Request{Input: src, Source: info}, &buf, func(Plan) {}); err != nil {
+		if err := m.Stream(context.Background(), 1, Request{Input: src, Source: info, MaxWidth: tc.maxW}, &buf, func(Plan) {}); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 		out := filepath.Join(dir, tc.name+".mp4")
@@ -91,8 +105,16 @@ func TestToneMapping(t *testing.T) {
 		if err != nil || got.HDR != "" || len(got.Streams) == 0 || got.Streams[0].ColorTransfer != "bt709" {
 			t.Errorf("%s: output still HDR or untagged: %+v %v", tc.name, got.Streams, err)
 		}
-		mid := testutil.AverageLuma(t, ffmpeg, out, "0.5", "300:300:10:30")
-		high := testutil.AverageLuma(t, ffmpeg, out, "0.5", "300:300:330:30")
+		midCrop, highCrop := "300:300:10:30", "300:300:330:30"
+		if tc.maxW > 0 {
+			if got.Width != tc.maxW {
+				t.Errorf("%s: output width %d, want %d", tc.name, got.Width, tc.maxW)
+			}
+			midCrop, highCrop = "140:140:5:15", "140:140:165:15"
+		}
+		mid := testutil.AverageLuma(t, ffmpeg, out, "0.5", midCrop)
+		high := testutil.AverageLuma(t, ffmpeg, out, "0.5", highCrop)
+		t.Logf("%s: diffuse luma %d, highlight luma %d", tc.name, mid, high)
 		if mid < tc.midMin || mid > tc.midMax || high < 230 || high <= mid {
 			t.Errorf("%s: luma %d (diffuse) and %d (highlight); want %d-%d and >= 230", tc.name, mid, high, tc.midMin, tc.midMax)
 		}

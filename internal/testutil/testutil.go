@@ -112,11 +112,17 @@ func BrightPixels(t testing.TB, ffmpeg, mp4 string, at string) int {
 func AverageLuma(t testing.TB, ffmpeg, file, at, crop string) int {
 	t.Helper()
 	out, err := exec.Command(ffmpeg, "-v", "error", "-ss", at, "-i", file, "-frames:v", "1",
-		"-vf", "crop="+crop+",scale=1:1:flags=area,format=gray", "-f", "rawvideo", "pipe:1").Output()
-	if err != nil || len(out) != 1 {
+		"-vf", "crop="+crop+",format=gray", "-f", "rawvideo", "pipe:1").Output()
+	if err != nil || len(out) == 0 {
 		t.Fatalf("average luma of %s at %s: %v (%d bytes)", file, at, err, len(out))
 	}
-	return int(out[0])
+	// Average the decoded pixels directly. Scaling a large crop to 1x1
+	// can change even a uniform image's luma on some ffmpeg versions.
+	var sum uint64
+	for _, v := range out {
+		sum += uint64(v)
+	}
+	return int((sum + uint64(len(out))/2) / uint64(len(out)))
 }
 
 // WriteHDRClip encodes a 10-bit HEVC clip tagged with the given transfer

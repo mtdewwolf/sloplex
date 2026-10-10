@@ -669,7 +669,11 @@ function transcoderSummary(tc) {
   const hw = tc.hwaccel === "none"
     ? `Software (${tc.encoder})` + (tc.requested !== "none" ? `; no working hardware encoder found (requested: ${tc.requested})` : "")
     : `Hardware: ${tc.hwaccel} (${tc.encoder})` + (tc.device ? ` on ${tc.device}` : "");
-  return `${hw} · up to ${tc.maxTranscodes} at once`;
+  let sw = `x264 preset: ${tc.x264Preset}`;
+  if (tc.x264Preset === "auto") {
+    sw += tc.benchmark ? ` (${Math.round(tc.benchmark.veryfast)} fps at 720p veryfast; load ${Math.round(tc.softwareLoad * 100)}%)` : " (benchmark pending or unavailable)";
+  }
+  return `${hw} · ${sw} · up to ${tc.maxTranscodes} at once` + (tc.throttle ? " · throttled when ahead" : "");
 }
 
 function editAccount(a) {

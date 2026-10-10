@@ -10,8 +10,8 @@
   - the session path shape `.../universal/session/{id}/base/index.m3u8`;
   - the parameters `path`, `mediaIndex`, `partIndex`, `offset`,
     `videoResolution`, `maxVideoBitrate`, `directStream`, and `session`;
-  - the `TranscodeSession` element, including its `transcodeHwEncoding` and
-    `transcodeHwFullPipeline` attributes;
+  - the `TranscodeSession` element, including its `transcodeHwEncoding`,
+    `transcodeHwFullPipeline`, and `throttled` attributes;
   - the `decision` endpoint path, its `directPlay` parameter, the
     `generalDecisionCode`/`Text`, `directPlayDecisionCode`/`Text`, and
     `transcodeDecisionCode`/`Text` attributes, and the `decision` attribute
@@ -19,6 +19,8 @@
     `transcode`, `burn`).
 - The VP9 and Opus encoder options (`libvpx-vp9 -deadline realtime
   -cpu-used -row-mt`, `libopus`) come from ffmpeg's public documentation.
+- The libx264 preset names come from x264's and ffmpeg's public
+  documentation.
 - The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
   `-init_hw_device`, `scale_vaapi`, `scale_cuda`, `scale_qsv`, `hwupload`,
   and the `h264_*` encoders and their rate-control options) come from
@@ -28,7 +30,8 @@
   - capability session URLs;
   - the decision rules, limits, idle timeout, and ffmpeg arguments;
   - the client capability parameters of the `decision` endpoint, and its
-    decision codes and texts.
+    decision codes and texts;
+  - the CPU benchmark, load model, preset choice, and throttle limits.
 
 ## Model
 
@@ -67,7 +70,8 @@ Otherwise video is encoded:
 - It is scaled down to fit the box, keeping the aspect ratio, with even
   dimensions.
 - It uses the hardware encoder if one is active (see **Hardware
-  acceleration**), and otherwise `libx264 -preset veryfast -crf 21`.
+  acceleration**), and otherwise `libx264 -preset <preset> -crf 21`. The
+  preset comes from `x264Preset`; see **CPU transcoding**.
 - With a bitrate cap it adds `-maxrate` and `-bufsize` (2× the cap).
 - For HLS it forces key frames every 4 s.
 
@@ -121,13 +125,22 @@ The item's Media reports it as `hdr` (`pq` or `hlg`) in the stored probe
 data.
 
 Encoding an HDR source runs this filter chain in software before any
-subtitle burn-in or scaling:
+subtitle burn-in or further scaling:
 
 ```
+[zscale=w=<W>:h=<H>:filter=bicubic,]
 zscale=tin=<smpte2084|arib-std-b67>:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,
 format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,
 zscale=t=bt709:m=bt709:r=tv,format=yuv420p
 ```
+
+- The first `zscale` runs only when the output is smaller than the source.
+  It resizes to the planned output size `W`×`H`, so the expensive
+  floating-point stages work on output pixels. This reduces the number of pixels processed by those stages;
+  actual savings depend on the machine and input (see **Measurements**).
+- When it runs, an image subtitle being burned in is scaled to `W`×`H` too
+  (`[0:<index>]scale=W:H`) before the overlay, so it lands where it would
+  have at the source size.
 
 - The output is tagged `-colorspace bt709 -color_primaries bt709
   -color_trc bt709`.
@@ -194,11 +207,164 @@ data, restarting would break the stream.
 Returns JSON:
 
 ```json
-{"available": true, "hwaccel": "vaapi", "encoder": "h264_vaapi", "device": "/dev/dri/renderD128", "requested": "auto", "maxTranscodes": 2}
+{"available": true, "hwaccel": "vaapi", "encoder": "h264_vaapi", "device": "/dev/dri/renderD128", "requested": "auto", "maxTranscodes": 2,
+ "x264Preset": "auto", "throttle": true, "softwareLoad": 0.42,
+ "benchmark": {"faster": 100.8, "veryfast": 144, "superfast": 201.6, "ultrafast": 316.8}}
 ```
 
 - `hwaccel` is `"none"` when encoding in software.
 - `available` is false when ffmpeg is missing.
+- `x264Preset` is the configured value. `throttle` is true when throttling
+  is on and the OS supports it.
+- `softwareLoad` is the estimated CPU share for active software encodes
+  and encode-only hardware decoding/filtering, including conservative VP9
+  reservations. See **Load model**.
+- `benchmark` gives frames per second at 720p for each preset that auto
+  mode uses. It is absent until the benchmark finishes, and absent when
+  `x264Preset` is not `auto`.
+
+## CPU transcoding (sloplex)
+
+When there is no working GPU, or the GPU pipelines fail, every encode runs
+on the CPU. Sloplex uses three measures to keep CPU-only servers
+playing:
+
+- tone mapping at the output size (see **HDR tone mapping**);
+- choosing the libx264 preset from measured speed and current load;
+- pausing HLS transcodes that are far ahead of the player.
+
+### Configuration
+
+| Config key          | Values                                                               | Default |
+|---------------------|----------------------------------------------------------------------|---------|
+| `x264Preset`        | `auto`, `ultrafast`, `superfast`, `veryfast`, `faster`, `fast`, `medium` | `auto`  |
+| `transcodeThrottle` | `true`, `false`                                                      | `true`  |
+
+A named preset is used for every software H.264 encode. WebM retains its
+fixed VP9 realtime settings and has no x264 preset. With `auto`, each
+transcode gets its own preset, as described below.
+
+### Benchmark
+
+With `auto`, the server measures libx264 once at startup, in the
+background:
+
+```
+ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=24 -frames:v 240
+       -c:v libx264 -preset veryfast -crf 21 -pix_fmt yuv420p -f null -
+```
+
+- The result is in frames per second, using every core.
+- The other presets are derived from fixed speed ratios relative to
+  `veryfast`: `faster` 0.7, `superfast` 1.4, `ultrafast` 2.2. These ratios
+  vary little between CPUs. One longer run is steadier than several short
+  runs; on a busy machine, short runs measured `faster` as faster than
+  `veryfast`.
+- Until the benchmark finishes, or if it fails, software encodes use
+  `veryfast`.
+
+### Load model
+
+The **load** of a software encode is the share of the whole machine it
+needs to keep up with real time:
+
+```
+load = fps × ( out / (speed[preset] × B)
+             + (in × decode[codec] + out × extra) / (speed[veryfast] × B) )
+```
+
+| Symbol | Meaning |
+|--------|---------|
+| `fps`  | The source frame rate (probed `avg_frame_rate`), or 30 if unknown |
+| `out`  | Output pixels per frame, `W`×`H` |
+| `in`   | Source pixels per frame |
+| `B`    | Benchmark pixels per frame, 1280×720 |
+| `speed[p]` | Benchmark frames per second for preset `p` |
+| `decode[codec]` | `h264` 0.45, `hevc` 0.7, `vp9` 0.6, `av1` 0.8, anything else 0.4 |
+| `extra` | 2.0 when tone mapping, plus 0.1 when burning in subtitles |
+
+The weights express the cost of decoding and filtering relative to
+libx264 `veryfast` encoding the same number of pixels. They were measured
+with ffmpeg 6.1 on x86-64. Copied video has a load of 0.
+
+VP9 output is not calibrated by the x264 benchmark. Each active WebM
+video encode conservatively reserves 0.75 of the planning budget,
+independent of the configured x264 preset; this is a scheduling reservation,
+not a measured CPU-utilization estimate. WebM video copies reserve zero.
+When the asynchronous benchmark completes, existing H.264 encode estimates
+are refreshed at their unchanged presets before scheduling later encodes.
+
+### Choosing a preset (auto)
+
+- The **running load** is the sum of the loads of transcodes that are
+  running now on the software pipeline, plus CPU decoding/filtering for
+  encode-only hardware pipelines. A full hardware pipeline adds no load.
+- Each new transcode gets the first preset of `faster`, `veryfast`,
+  `superfast`, `ultrafast` for which running load plus its own load is at
+  most **0.75**. If none fits, it gets `ultrafast`.
+- So an idle machine gives better quality per bit. A busy machine, or a
+  heavy source such as 4K HDR, gets faster presets so that playback keeps
+  up.
+- The preset is fixed when the transcode starts.
+- The chosen preset is logged with `transcode started`.
+
+### Throttling
+
+HLS transcodes run at full speed until they are well ahead of the player.
+
+- The server tracks the highest segment number each session has been
+  asked for.
+- **Pause:** the transcode is paused when the playlist lists more than
+  90 s beyond that segment, summing playlist `EXTINF` durations rather
+  than assuming copied-video keyframes produce four-second segments. ffmpeg gets `SIGSTOP`.
+- **Resume:** it continues (`SIGCONT`) when the lead falls to 45 s or
+  less.
+- The lead is checked every second, and at once on each segment request.
+  A request beyond the end of the playlist (a seek forward) therefore
+  resumes ffmpeg immediately.
+- Paused transcodes still count towards `maxTranscodes`.
+- A paused transcode is listed with `throttled="1"` in
+  `/transcode/sessions`.
+- Throttling needs a Unix-like OS. Elsewhere, and when `transcodeThrottle`
+  is `false`, HLS transcodes run at full speed to the end.
+- Progressive MP4 and WebM streams are not throttled here. They slow down by
+  themselves when the client stops reading.
+
+### Measurements
+
+Historical measurements reported by the original CPU-acceleration change
+were taken on a 4-core x86-64 VM with AVX-512, using
+ffmpeg 6.1 and a 12 s HEVC 10-bit 4K PQ clip transcoded to 1080p over HLS.
+
+| | First segment | All 12 s |
+|---|---|---|
+| Before (tone map at 4K, `veryfast`) | 17.5 s | 38.4 s |
+| After (tone map at 1080p, auto chose `ultrafast`) | 6.3 s | 14.2 s |
+
+The table changes both filter order and encoder preset, so it does not
+isolate either optimization.
+
+A reproducible synthetic filter-order comparison is available with
+`python3 test/bench/tonemap.py`. It uses a generated 48-frame, 3840×2160
+10-bit PQ-tagged test pattern, 1920×1080 output, the same `veryfast` preset,
+four encoder threads, and one filter thread for both pipelines. Three
+alternating-order runs on the integration environment (ffmpeg 7.1.5,
+9 visible CPUs) gave median wall times of **5.586 s before** and
+**1.673 s after**: **3.34× faster** for this synthetic workload. This is
+not a real-media playback or HEVC-decoding benchmark and does not establish
+visual equivalence or a universal speedup. The benchmark checks successful
+encoding to a null sink; separate `TestToneMapping` regressions inspect
+encoded PQ/HLG outputs for BT.709 tags, output width, and expected diffuse
+white/highlight luminance, while PGS tests check subtitle size and timing.
+
+Two alternatives were historically measured and **not** adopted:
+
+- **Encoding time-chunks in parallel ffmpeg processes:** no faster on
+  4 cores. One ffmpeg already keeps about 3 of 4 cores busy. Every chunk
+  also decodes again from the previous key frame, which made long-GOP
+  sources slower.
+- **A precomputed 3D LUT (`lut3d`) instead of the tone-mapping chain:** no
+  faster. 16-bit `lut3d` is not SIMD-optimised in ffmpeg 6.1.
 
 ## Endpoints
 
@@ -363,6 +529,7 @@ transcode:
 | `audioDecision` | `copy`, `transcode`, or empty when there is no audio |
 | `width`, `height` | Output size                              |
 | `complete`      | `1` once ffmpeg has finished               |
+| `throttled`     | `1` while the transcode is paused for being far ahead of the player; see **Throttling** |
 | `transcodeHwEncoding` | The accelerator in use (`vaapi`, `qsv`, `nvenc`, `videotoolbox`), or empty for software or copy |
 | `transcodeHwFullPipeline` | `1` when decoding, scaling, and encoding all run on the GPU |
 
@@ -372,7 +539,8 @@ transcode:
   deleted.
 - On startup, the server deletes the leftover `<dataDir>/transcode/` from any
   earlier run. On shutdown it stops all transcodes.
-- ffmpeg runs at full speed, without throttling.
+- ffmpeg runs at full speed, except that HLS transcodes far ahead of the
+  player are paused; see **Throttling**.
 
 ## Not implemented yet
 
@@ -382,3 +550,15 @@ transcode:
 - Dolby Vision profile 5, which has no HDR10 base layer, is not tone mapped
   correctly.
 - Adaptive bitrate ladders.
+- Changing the preset of a running transcode as the load changes.
+- Splitting decoding and encoding into separate processes. With ffmpeg 6.x,
+  this gained 5–15% by overlapping work that the ffmpeg 6 CLI runs on one
+  thread.
+
+### Test-environment limitation
+
+The synthetic HDR/PGS timing fixture disables HEVC B-frames: ffmpeg 7.1.5
+can deliver subtitle heartbeat frames out of order for that very short
+B-frame fixture, even with plain unscaled overlay. The test verifies
+subtitle position, scaled size, and appearance/disappearance with ordered
+input; this does not claim to fix ffmpeg's B-frame subtitle timing issue.
