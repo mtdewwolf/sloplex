@@ -96,6 +96,10 @@ func (s *Server) item(w http.ResponseWriter, r *http.Request) (library.Item, boo
 }
 
 func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
+	if c, ok := s.collection(r); ok {
+		s.writeCollection(w, r, c)
+		return
+	}
 	it, ok := s.item(w, r)
 	if !ok {
 		return
@@ -113,6 +117,10 @@ func (s *Server) handleMetadata(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleChildren(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.collection(r); ok {
+		s.handleCollectionChildren(w, r)
+		return
+	}
 	it, ok := s.item(w, r)
 	if !ok {
 		return
@@ -151,25 +159,32 @@ func (s *Server) setSection(mc *MediaContainer, sectionID int) {
 // page applies X-Plex-Container-Start/Size to items and stores the result in
 // mc. defaultSize < 0 means no limit.
 func (s *Server) page(r *http.Request, mc *MediaContainer, items []library.Item, defaultSize int) {
-	start := pagingParam(r, "X-Plex-Container-Start", 0)
-	size := pagingParam(r, "X-Plex-Container-Size", defaultSize)
 	acct := s.account(r)
 	see := s.visibility(r)
 	items = slices.DeleteFunc(items, func(it library.Item) bool { return !see(it.SectionID) })
 	total := len(items)
-	paged := r.URL.Query().Has("X-Plex-Container-Start") || r.Header.Get("X-Plex-Container-Start") != "" ||
-		size >= 0 && size < total
-	start = min(start, total)
-	end := total
-	if size >= 0 {
-		end = min(start+size, total)
-	}
+	start, end, paged := pageBounds(r, total, defaultSize)
 	for _, it := range items[start:end] {
 		mc.Metadata = append(mc.Metadata, s.metadata(it, acct))
 	}
 	if paged {
 		mc.TotalSize, mc.Offset = &total, &start
 	}
+}
+
+// pageBounds returns the slice of total entries that X-Plex-Container-Start
+// and Size select, and whether paging was asked for or applied.
+func pageBounds(r *http.Request, total, defaultSize int) (start, end int, paged bool) {
+	start = pagingParam(r, "X-Plex-Container-Start", 0)
+	size := pagingParam(r, "X-Plex-Container-Size", defaultSize)
+	paged = r.URL.Query().Has("X-Plex-Container-Start") || r.Header.Get("X-Plex-Container-Start") != "" ||
+		size >= 0 && size < total
+	start = min(start, total)
+	end = total
+	if size >= 0 {
+		end = min(start+size, total)
+	}
+	return start, end, paged
 }
 
 func pagingParam(r *http.Request, name string, def int) int {
@@ -285,9 +300,10 @@ func (s *Server) metadata(it library.Item, acct int) Metadata {
 	if m := it.Meta; m != nil {
 		md.OriginalTitle, md.Summary, md.Tagline, md.ContentRating, md.Rating, md.Studio =
 			m.OriginalTitle, m.Summary, m.Tagline, m.ContentRating, m.Rating, m.Studio
-		md.Genre, md.Director, md.Writer, md.Country, md.Collection =
-			tags(m.Genres), tags(m.Directors), tags(m.Writers), tags(m.Countries), tags(m.Collections)
+		md.Genre, md.Director, md.Writer, md.Country =
+			tags(m.Genres), tags(m.Directors), tags(m.Writers), tags(m.Countries)
 	}
+	md.Collection = tags(s.store.CollectionTitles(it.ID))
 	if sec, err := s.store.Section(it.SectionID); err == nil {
 		md.LibrarySectionTitle = sec.Title
 	}

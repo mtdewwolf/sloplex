@@ -42,6 +42,7 @@ source.
 | [transcode.md](transcode.md) | HLS, progressive MP4 and WebM transcoding                |
 | [streams.md](streams.md)   | Audio tracks, subtitles, stream selection, burn-in         |
 | [metadata.md](metadata.md) | Local `.nfo` metadata: summaries, ratings, genres, cast    |
+| [collections.md](collections.md) | Collections: automatic from `.nfo` sets, and manual  |
 
 ## Conventions
 

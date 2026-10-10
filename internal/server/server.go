@@ -103,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	s.accountRoutes(mux)
 	s.transcodeRoutes(mux)
 	s.streamRoutes(mux)
+	s.collectionRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())
 	mux.HandleFunc("GET /web", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)

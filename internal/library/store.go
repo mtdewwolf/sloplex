@@ -163,14 +163,15 @@ var ErrNotFound = errors.New("not found")
 const storeVersion = 1
 
 type storeData struct {
-	Version       int        `json:"version"`
-	NextSectionID int        `json:"nextSectionId"`
-	NextItemID    int        `json:"nextItemId"`
-	NextMediaID   int        `json:"nextMediaId"`
-	NextPartID    int        `json:"nextPartId"`
-	NextStreamID  int        `json:"nextStreamId,omitempty"`
-	Sections      []*Section `json:"sections"`
-	Items         []*Item    `json:"items"`
+	Version       int           `json:"version"`
+	NextSectionID int           `json:"nextSectionId"`
+	NextItemID    int           `json:"nextItemId"`
+	NextMediaID   int           `json:"nextMediaId"`
+	NextPartID    int           `json:"nextPartId"`
+	NextStreamID  int           `json:"nextStreamId,omitempty"`
+	Sections      []*Section    `json:"sections"`
+	Items         []*Item       `json:"items"`
+	Collections   []*Collection `json:"collections,omitempty"`
 }
 
 type fileRef struct {
@@ -193,6 +194,7 @@ type Store struct {
 	parts    map[int]fileRef
 	files    map[fileKey]fileRef
 	streams  map[int]streamRef
+	memberOf map[int][]*Collection // item ID -> collections holding it
 }
 
 type streamRef struct {
@@ -250,6 +252,7 @@ func (s *Store) reindexLocked() {
 			}
 		}
 	}
+	s.reindexCollectionsLocked()
 	for _, kids := range s.children {
 		sort.Slice(kids, func(i, j int) bool {
 			if kids[i].Index != kids[j].Index {
@@ -296,6 +299,7 @@ func (s *Store) SyncSections(defs []SectionDef, now time.Time) error {
 	}
 	s.d.Sections = out
 	s.d.Items = slices.DeleteFunc(s.d.Items, func(it *Item) bool { return !keep[it.SectionID] })
+	s.d.Collections = slices.DeleteFunc(s.d.Collections, func(c *Collection) bool { return !keep[c.SectionID] })
 	s.reindexLocked()
 	return s.saveLocked()
 }
@@ -480,6 +484,7 @@ func (s *Store) ApplyScan(sectionID int, files []ScannedFile, now time.Time) (Sc
 	a.finish()
 	sec.ScannedAt = now.Unix()
 	s.reindexLocked()
+	s.syncCollectionsLocked(sec, now.Unix())
 	return a.stats, s.saveLocked()
 }
 

@@ -67,7 +67,7 @@ A `.nfo` file is XML whose root element is `movie`, `tvshow`, or
 | `credits` | `Writer` | Repeated |
 | `country` | `Country` | Repeated |
 | `actor` | `Role` | `name` becomes `tag` and `role` becomes `role`, in `order` (then file) order. Actors without a name are skipped |
-| `set`, or `set/name` | `Collection` | Movies: the name of the movie's set |
+| `set`, or `set/name` | – | Movies: puts the movie in an automatic collection; see [collections.md](collections.md) |
 
 - **(sloplex)** Each list keeps at most 50 values, without duplicates
   (compared without regard to case).
@@ -104,6 +104,9 @@ The fields appear on items in every response that lists them:
   <Collection tag="Michael Mann Films"/>
 </Video>
 ```
+
+`Collection` lists every collection the item is in, automatic or manual;
+see [collections.md](collections.md).
 
 In JSON these are the arrays `Genre`, `Director`, `Writer`, `Country`,
 `Role`, and `Collection`, made of `{"tag": …}` objects; `Role` objects also

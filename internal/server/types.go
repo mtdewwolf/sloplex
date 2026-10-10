@@ -122,9 +122,12 @@ type Metadata struct {
 	Key       string `xml:"key,attr" json:"key"`
 	GUID      string `xml:"guid,attr" json:"guid"`
 	Type      string `xml:"type,attr" json:"type"`
-	Title     string `xml:"title,attr" json:"title"`
-	TitleSort string `xml:"titleSort,attr,omitempty" json:"titleSort,omitempty"`
-	Year      int    `xml:"year,attr,omitempty" json:"year,omitempty"`
+	// Subtype and CollectionSource describe collections.
+	Subtype          string `xml:"subtype,attr,omitempty" json:"subtype,omitempty"`
+	CollectionSource string `xml:"collectionSource,attr,omitempty" json:"collectionSource,omitempty"`
+	Title            string `xml:"title,attr" json:"title"`
+	TitleSort        string `xml:"titleSort,attr,omitempty" json:"titleSort,omitempty"`
+	Year             int    `xml:"year,attr,omitempty" json:"year,omitempty"`
 	// Index is the season or episode number; always set for those types.
 	Index       *int  `xml:"index,attr,omitempty" json:"index,omitempty"`
 	ParentIndex *int  `xml:"parentIndex,attr,omitempty" json:"parentIndex,omitempty"`
