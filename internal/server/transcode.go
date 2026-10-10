@@ -24,6 +24,7 @@ const transcodeBase = "/video/:/transcode/universal"
 func (s *Server) transcodeRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+transcodeBase+"/start.m3u8", s.handleTranscodeHLS)
 	mux.HandleFunc("GET "+transcodeBase+"/start.mp4", s.handleTranscodeMP4)
+	mux.HandleFunc("GET "+transcodeBase+"/start.webm", s.handleTranscodeWebM)
 	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/base/{file}", s.handleTranscodeFile)
 	mux.HandleFunc("GET "+transcodeBase+"/session/{sid}/subs/{stream}/{file}", s.handleTranscodeSubs)
 	for _, m := range []string{"GET ", "PUT "} {
@@ -360,14 +361,28 @@ func (s *Server) handleTranscodeFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTranscodeMP4(w http.ResponseWriter, r *http.Request) {
+	s.transcodeStream(w, r, false)
+}
+
+func (s *Server) handleTranscodeWebM(w http.ResponseWriter, r *http.Request) {
+	s.transcodeStream(w, r, true)
+}
+
+// transcodeStream serves a progressive transcode: fragmented MP4, or WebM.
+func (s *Server) transcodeStream(w http.ResponseWriter, r *http.Request, webm bool) {
 	it, req, ok := s.transcodeTarget(w, r)
 	if !ok {
 		return
 	}
+	req.WebM = webm
+	ctype := "video/mp4"
+	if webm {
+		ctype = "video/webm"
+	}
 	started := false
 	err := s.tc.Stream(r.Context(), it.ID, req, w, func(transcode.Plan) {
 		started = true
-		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Type", ctype)
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	})

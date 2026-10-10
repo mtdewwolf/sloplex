@@ -33,7 +33,7 @@ Sloplex is a standalone product:
 | Date-based TV episodes             | ⏳                                       |
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
-| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
+| Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
 | HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
 | Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in, WebVTT renditions in HLS |
@@ -72,7 +72,9 @@ Admins also get an Admin page for managing accounts, library access, device
 tokens, and library refreshes.
 
 Files the browser can decode play directly. Anything else is converted on
-the fly to H.264/AAC, which needs ffmpeg.
+the fly, which needs ffmpeg. The conversion is H.264/AAC, or VP9/Opus WebM
+for browsers without H.264. While converting, the player's seek bar still
+covers the whole file: seeking restarts the conversion at the new point.
 
 ### Users
 
@@ -134,13 +136,14 @@ Artwork comes from image files next to your media, such as `poster.jpg`,
 See [docs/spec/artwork.md](docs/spec/artwork.md) for the names that are
 recognised.
 
-Install ffmpeg (which includes `ffprobe`) to get two extras:
+Install ffmpeg (which includes `ffprobe`) to get these extras:
 
 - duration, codec, and resolution details. Without `ffprobe`, Sloplex
   reports only the container.
 - generated thumbnails for episodes that have no image;
 - transcoding for clients that can't play a file as it is. Clients use
-  `/video/:/transcode/universal/start.m3u8` (HLS) or `start.mp4`; see
+  `/video/:/transcode/universal/start.m3u8` (HLS), `start.mp4`, or
+  `start.webm`; see
   [docs/spec/transcode.md](docs/spec/transcode.md).
 
 ### Hardware transcoding

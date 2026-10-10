@@ -12,24 +12,27 @@
     `videoResolution`, `maxVideoBitrate`, `directStream`, and `session`;
   - the `TranscodeSession` element, including its `transcodeHwEncoding` and
     `transcodeHwFullPipeline` attributes.
+- The VP9 and Opus encoder options (`libvpx-vp9 -deadline realtime
+  -cpu-used -row-mt`, `libopus`) come from ffmpeg's public documentation.
 - The ffmpeg hardware options (`-hwaccel`, `-vaapi_device`,
   `-init_hw_device`, `scale_vaapi`, `scale_cuda`, `scale_qsv`, `hwupload`,
   and the `h264_*` encoders and their rate-control options) come from
   ffmpeg's own public documentation.
 - These are **(sloplex)**:
-  - the progressive `start.mp4` endpoint;
+  - the progressive `start.mp4` and `start.webm` endpoints;
   - capability session URLs;
   - the decision rules, limits, idle timeout, and ffmpeg arguments.
 
 ## Model
 
 A **transcode** converts one media part into something every client can
-play: H.264 video and AAC stereo audio. It is delivered one of two ways:
+play: H.264 video and AAC stereo audio. It is delivered one of three ways:
 
 | Protocol | Endpoint     | Output                                                        |
 |----------|--------------|---------------------------------------------------------------|
 | HLS      | `start.m3u8` | MPEG-TS segments of about 4 s plus playlists, written to `<dataDir>/transcode/<session>/` |
 | HTTP     | `start.mp4`  | Fragmented MP4 streamed in the response body; nothing is written to disk |
+| HTTP     | `start.webm` | **(sloplex)** VP9 video and Opus audio in WebM, streamed like `start.mp4`; see **WebM** |
 
 - Transcoding needs `ffmpeg`, configured as in [artwork.md](artwork.md).
   Without it, the start endpoints return `503`.
@@ -77,6 +80,28 @@ are never muxed into the output, but they can be burned in. See
 **Start position.** `offset`, in seconds, starts the output at that position
 of the source. Output timestamps start at 0, so clients add `offset` back
 when reporting progress.
+
+## WebM (sloplex)
+
+`start.webm` is for browsers that cannot decode H.264, such as Chromium
+builds without proprietary codecs. It follows the decisions above, with
+these changes:
+
+- **Video is copied** when the source codec is `vp9` (instead of `h264`) and
+  the other copy conditions hold. Otherwise it is encoded with
+  `libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -crf 32
+  -pix_fmt yuv420p`, with `-b:v 0`, or with `-b:v`, `-maxrate`, and
+  `-bufsize` (2×) set from `maxVideoBitrate`.
+- VP9 is always encoded in software, so only the software pipeline is used.
+  Software VP9 is much slower than H.264, so clients should set
+  `videoResolution`; the web app asks for `1280x720`.
+- **Audio is copied** when the source is Opus with at most 2 channels.
+  Otherwise it is encoded to Opus stereo at 128 kbps.
+- The source's per-stream `DURATION` tags are not copied. Matroska sources
+  carry them for the whole file, and browsers would take them as the
+  length of a stream that starts at `offset`.
+- The output has no duration and no cues, and the response cannot be
+  seeked.
 
 ## HDR tone mapping (sloplex)
 
@@ -231,6 +256,11 @@ Every request to a session counts as activity.
 Streams fragmented MP4 (`video/mp4`) for as long as the client reads. It
 accepts the same parameters as `start.m3u8` except `session`, and the
 response cannot be seeked. Closing the connection stops the transcode.
+
+### `GET /video/:/transcode/universal/start.webm` (sloplex)
+
+The same as `start.mp4`, but it streams WebM (`video/webm`) as described in
+**WebM**.
 
 ### `GET|PUT /video/:/transcode/universal/stop`
 

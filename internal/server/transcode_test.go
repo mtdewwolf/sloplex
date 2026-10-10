@@ -148,6 +148,14 @@ func TestTranscodeMP4AndValidation(t *testing.T) {
 	if code != 200 || hdr.Get("Content-Type") != "video/mp4" || len(body) < 1000 || !bytes.Equal(body[4:8], []byte("ftyp")) {
 		t.Fatalf("mp4 = %d %q, %d bytes", code, hdr.Get("Content-Type"), len(body))
 	}
+	// WebM starts with the EBML magic number.
+	code, hdr, body = f.raw(t, "/video/:/transcode/universal/start.webm?offset=3&videoResolution=320x180&path="+clip.Key, testToken)
+	if code != 200 || hdr.Get("Content-Type") != "video/webm" || len(body) < 1000 || !bytes.Equal(body[:4], []byte{0x1a, 0x45, 0xdf, 0xa3}) {
+		t.Fatalf("webm = %d %q, %d bytes", code, hdr.Get("Content-Type"), len(body))
+	}
+	if code, _, _ := f.raw(t, "/video/:/transcode/universal/start.webm?videoResolution=big&path="+clip.Key, testToken); code != 400 {
+		t.Errorf("start.webm validation = %d", code)
+	}
 
 	show := f.getJSON(t, "/library/sections/2/all").Metadata[0]
 	for params, want := range map[string]int{
@@ -171,7 +179,7 @@ func TestTranscodeMP4AndValidation(t *testing.T) {
 	// Restricted accounts cannot transcode hidden items.
 	f.api(t, "POST", "/sloplex/accounts", testToken, map[string]any{"name": "kid", "password": "cartoons1", "libraries": []int{2}}, nil)
 	kid := f.login(t, "kid", "cartoons1")
-	for _, ext := range []string{"m3u8", "mp4"} {
+	for _, ext := range []string{"m3u8", "mp4", "webm"} {
 		if code, _, _ := f.raw(t, "/video/:/transcode/universal/start."+ext+"?path="+clip.Key, kid); code != 404 {
 			t.Errorf("kid start.%s = %d", ext, code)
 		}
