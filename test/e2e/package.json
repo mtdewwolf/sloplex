@@ -1,0 +1,12 @@
+{
+  "name": "sloplex-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser end-to-end suites for the Sloplex web app",
+  "scripts": {
+    "test": "./run.sh"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

@@ -217,3 +217,10 @@ go test -race ./...
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you contribute. The
 clean-room rules there are mandatory.
+
+Browser end-to-end suites for the web app live in `test/e2e/`. They need
+Node and Playwright; see [test/e2e/README.md](test/e2e/README.md).
+
+```sh
+cd test/e2e && npm install && npx playwright install chromium && ./run.sh
+```
