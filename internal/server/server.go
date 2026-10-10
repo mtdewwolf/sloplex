@@ -35,6 +35,7 @@ type Options struct {
 	Version         string
 	Tokens          []string
 	AllowedNetworks []netip.Prefix
+	StrictTokenAuth bool
 	// AutoUpdateCheck says whether the daily update check is on.
 	AutoUpdateCheck bool
 }
@@ -95,11 +96,13 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	if d.TrueNAS == nil {
 		d.TrueNAS, _ = truenas.Open("") // in memory; cannot fail
 	}
+	auth := newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts)
+	auth.strict = opts.StrictTokenAuth
 	return &Server{
 		playlists: d.Playlists, updates: d.Updates, truenas: d.TrueNAS, tn: realTrueNAS{},
 		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
-		auth:    newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts),
+		auth:    auth,
 		baseCtx: ctx, started: time.Now(),
 	}
 }

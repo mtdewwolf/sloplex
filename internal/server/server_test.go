@@ -69,7 +69,7 @@ func newFixture(t *testing.T, opts Options) *fixture {
 		t.Fatal(err)
 	}
 	if opts.MachineID == "" {
-		opts = Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}, AllowedNetworks: opts.AllowedNetworks}
+		opts = Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}, AllowedNetworks: opts.AllowedNetworks, StrictTokenAuth: opts.StrictTokenAuth}
 	}
 	return &fixture{srv: startServer(t, opts, store, sc, ""), store: store, section: sec, root: root}
 }

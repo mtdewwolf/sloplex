@@ -53,3 +53,17 @@ Requests whose remote address falls in a CIDR from the config list
 - A missing or invalid token gets `401 Unauthorized` with a plain-text body.
 - For a trusted network, an invalid token is ignored and the request falls
   back to the owner.
+
+## Strict token mode (sloplex)
+
+Set `"strictTokenAuth": true` to reject an invalid or revoked supplied token
+with `401` on protected routes, including on trusted networks. This is an
+opt-in hardening option; it defaults to `false` for existing deployments.
+Tokenless trusted requests still act as owner, valid tokens still select
+their account, and public identity/login/session routes remain public.
+Native clients should use this mode or an empty `allowedNetworks` list.
+The public random HLS session URL remains a bearer capability until stopped
+or expired; strict token mode does not revoke an already issued session URL.
+
+Provenance: our own design, verified by `TestStrictTrustedTokens` and the
+existing trusted-network compatibility tests.

@@ -163,6 +163,7 @@ func run(configPath string, log *slog.Logger) error {
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
+		StrictTokenAuth: cfg.StrictTokenAuth,
 		AutoUpdateCheck: cfg.UpdateCheck,
 	}, server.Deps{Store: store, Scanner: scanner, Play: play, Playlists: lists, Art: art, Accounts: accts, Transcoder: tc,
 		Updates: checker, TrueNAS: nas,
