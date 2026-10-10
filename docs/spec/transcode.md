@@ -61,6 +61,9 @@ Otherwise video is encoded:
 - With a bitrate cap it adds `-maxrate` and `-bufsize` (2× the cap).
 - For HLS it forces key frames every 4 s.
 
+**HDR sources** are never copied. They are tone mapped to SDR; see **HDR
+tone mapping**.
+
 **Audio is copied** when the source is AAC with at most 2 channels.
 Otherwise it is encoded to AAC stereo at 160 kbps. A source without audio
 produces video-only output.
@@ -74,6 +77,34 @@ are never muxed into the output, but they can be burned in. See
 **Start position.** `offset`, in seconds, starts the output at that position
 of the source. Output timestamps start at 0, so clients add `offset` back
 when reporting progress.
+
+## HDR tone mapping (sloplex)
+
+A video stream is **HDR** when ffprobe reports its transfer as one of:
+
+- `smpte2084` (PQ, used by HDR10 and Dolby Vision base layers);
+- `arib-std-b67` (HLG).
+
+The item's Media reports it as `hdr` (`pq` or `hlg`) in the stored probe
+data.
+
+Encoding an HDR source runs this filter chain in software before any
+subtitle burn-in or scaling:
+
+```
+zscale=tin=<smpte2084|arib-std-b67>:min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100,
+format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,
+zscale=t=bt709:m=bt709:r=tv,format=yuv420p
+```
+
+- The output is tagged `-colorspace bt709 -color_primaries bt709
+  -color_trc bt709`.
+- Like burn-in, tone mapping needs frames in system memory. It therefore
+  skips the full-hardware pipeline; the hardware-encode-only and software
+  pipelines still apply.
+- **Effect:** diffuse white (about 100 nits) lands in the upper mid-tones,
+  and highlights of 1000 nits and more reach full white. Naive conversion
+  instead leaves the picture grey and dull.
 
 ## Hardware acceleration (sloplex)
 
@@ -239,6 +270,9 @@ transcode:
 ## Not implemented yet
 
 - Hardware decoding when video is copied, which is not needed.
-- Hardware tone mapping of HDR sources.
+- Tone mapping on the GPU (`tonemap_vaapi`, `tonemap_opencl`); HDR sources
+  are tone mapped on the CPU.
+- Dolby Vision profile 5, which has no HDR10 base layer, is not tone mapped
+  correctly.
 - Adaptive bitrate ladders.
 - The `decision` endpoint.

@@ -59,6 +59,8 @@ type Plan struct {
 	Bandwidth int
 	// Burn is set when a subtitle is burned in.
 	Burn bool
+	// ToneMap is set when an HDR source is tone mapped to SDR.
+	ToneMap bool
 }
 
 // Decide applies the decision rules.
@@ -70,7 +72,8 @@ func Decide(r Request) Plan {
 	fits := (r.MaxWidth == 0 || src.Width <= r.MaxWidth) && (r.MaxHeight == 0 || src.Height <= r.MaxHeight)
 	withinRate := r.MaxBitrate == 0 || (src.Bitrate > 0 && src.Bitrate <= r.MaxBitrate)
 	p.Burn = r.Burn != nil
-	p.CopyVideo = src.VideoCodec == "h264" && fits && withinRate && !r.NoDirectStream && !p.Burn
+	p.ToneMap = src.HDR != ""
+	p.CopyVideo = src.VideoCodec == "h264" && fits && withinRate && !r.NoDirectStream && !p.Burn && !p.ToneMap
 
 	p.Width, p.Height = src.Width, src.Height
 	if !p.CopyVideo {
@@ -170,8 +173,8 @@ func Pipelines(hw HW, p Plan) []Pipeline {
 	}
 	full := Pipeline{Accel: hw.Accel, Device: hw.Device, Full: true}
 	encodeOnly := Pipeline{Accel: hw.Accel, Device: hw.Device}
-	if p.Burn {
-		// Burning in needs frames in system memory.
+	if p.Burn || p.ToneMap {
+		// Burning in and tone mapping need frames in system memory.
 		return []Pipeline{encodeOnly, {}}
 	}
 	if hw.Accel == AccelVideoToolbox {
@@ -198,11 +201,9 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 	videoMap := "0:v:0"
 	if encode {
 		chain := videoFilter(r, p, pl)
-		join := func(a, b string) string {
-			if b == "" {
-				return a
-			}
-			return a + "," + b
+		tone := ""
+		if p.ToneMap {
+			tone = toneMapFilter(r.Source.HDR)
 		}
 		switch {
 		case r.Burn != nil && r.Burn.File != "":
@@ -213,13 +214,20 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 				off := strconv.FormatFloat(r.Offset, 'f', 3, 64)
 				f = "setpts=PTS+" + off + "/TB," + f + ",setpts=PTS-STARTPTS"
 			}
-			args = append(args, "-vf", join(f, chain))
+			args = append(args, "-vf", joinFilters(tone, f, chain))
 		case r.Burn != nil:
-			args = append(args, "-filter_complex",
-				join(fmt.Sprintf("[0:v:0][0:%d]overlay=eof_action=pass", r.Burn.Index), chain)+"[vout]")
+			src := "[0:v:0]"
+			graph := ""
+			if tone != "" {
+				graph, src = "[0:v:0]"+tone+"[sdr];", "[sdr]"
+			}
+			graph += joinFilters(fmt.Sprintf("%s[0:%d]overlay=eof_action=pass", src, r.Burn.Index), chain) + "[vout]"
+			args = append(args, "-filter_complex", graph)
 			videoMap = "[vout]"
-		case chain != "":
-			args = append(args, "-vf", chain)
+		default:
+			if vf := joinFilters(tone, chain); vf != "" {
+				args = append(args, "-vf", vf)
+			}
 		}
 	}
 	audioMap := "0:a:0?"
@@ -232,6 +240,9 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 		args = append(args, "-c:v", "copy")
 	} else {
 		args = append(args, "-c:v", Encoder(pl.Accel))
+		if p.ToneMap {
+			args = append(args, "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709")
+		}
 		args = append(args, rateControl(r, p, pl)...)
 		if out.HLSDir != "" {
 			args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segmentSeconds))
@@ -265,6 +276,29 @@ func Args(r Request, p Plan, out Output, pl Pipeline) []string {
 var qsvDecoders = map[string]string{
 	"h264": "h264_qsv", "hevc": "hevc_qsv", "mpeg2video": "mpeg2_qsv",
 	"vp9": "vp9_qsv", "av1": "av1_qsv", "vc1": "vc1_qsv",
+}
+
+// joinFilters joins non-empty filter chains with commas.
+func joinFilters(parts ...string) string {
+	var out []string
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// toneMapFilter converts an HDR source (probe.HDRPQ or HDRHLG) to 8-bit
+// BT.709 SDR; see "HDR tone mapping" in docs/spec/transcode.md.
+func toneMapFilter(hdr string) string {
+	tin := "smpte2084"
+	if hdr == probe.HDRHLG {
+		tin = "arib-std-b67"
+	}
+	return "zscale=tin=" + tin + ":min=bt2020nc:pin=bt2020:rin=tv:t=linear:npl=100," +
+		"format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0," +
+		"zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
 }
 
 // hwInputArgs are the device and decoder options placed before -i.

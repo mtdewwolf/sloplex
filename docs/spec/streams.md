@@ -90,7 +90,7 @@ Streams appear as `Stream` children of `Part`. They are only included in
 | `index` | ffprobe index; omitted for sidecars |
 | `language`, `languageCode` | See above |
 | `title` | The stream's title tag, if any |
-| `displayTitle` | Language (or "Unknown"), then for subtitles a `Forced`/`SDH` marker, then the format in parentheses. Audio adds the layout: `English (AAC Stereo)`, `French (AC3 5.1)`, `English Forced (SRT)` |
+| `displayTitle` | Language (or "Unknown"), then for subtitles a `Forced`/`SDH` marker, then the format in parentheses. Audio adds the layout: `English (AAC Stereo)`, `French (AC3 5.1)`, `English Forced (SRT)`. Video is resolution, then `HDR10` or `HLG` for HDR, then the codec: `4K HDR10 (HEVC)` |
 | `extendedDisplayTitle` | `displayTitle`, plus ` – <title>` when a title is set |
 | `channels`, `audioChannelLayout` | Audio |
 | `width`, `height` | Video |

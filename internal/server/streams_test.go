@@ -300,3 +300,15 @@ func TestPGSAutoBurn(t *testing.T) {
 		t.Errorf("subtitles=none still burned the PGS box (%d bright pixels)", during)
 	}
 }
+
+func TestVideoDisplayTitles(t *testing.T) {
+	for want, st := range map[string]library.Stream{
+		"4K HDR10 (HEVC)":  {Stream: probe.Stream{Type: probe.StreamVideo, Codec: "hevc", Width: 3840, Height: 2160, ColorTransfer: "smpte2084"}},
+		"1080p HLG (HEVC)": {Stream: probe.Stream{Type: probe.StreamVideo, Codec: "hevc", Width: 1920, Height: 1080, ColorTransfer: "arib-std-b67"}},
+		"720p (H264)":      {Stream: probe.Stream{Type: probe.StreamVideo, Codec: "h264", Width: 1280, Height: 720, ColorTransfer: "bt709"}},
+	} {
+		if got, _ := displayTitles(st); got != want {
+			t.Errorf("displayTitles = %q, want %q", got, want)
+		}
+	}
+}

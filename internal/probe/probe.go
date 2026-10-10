@@ -25,13 +25,33 @@ type Info struct {
 	Container     string `json:"container,omitempty"`
 	// Streams lists every stream in file order (see docs/spec/streams.md).
 	Streams []Stream `json:"streams,omitempty"`
+	// HDR is "pq" or "hlg" when the first video stream is HDR.
+	HDR string `json:"hdr,omitempty"`
 	// ProbeVersion is Version when the file was probed by ffprobe, so
 	// libraries probed by older versions are re-probed once.
 	ProbeVersion int `json:"probeVersion,omitempty"`
 }
 
-// Version is the current probe format version.
-const Version = 2
+// Version is the current probe format version: 2 added streams, 3 added
+// color information.
+const Version = 3
+
+// HDR transfer kinds.
+const (
+	HDRPQ  = "pq"
+	HDRHLG = "hlg"
+)
+
+// HDRKind maps an ffprobe color_transfer to an HDR kind, or "".
+func HDRKind(transfer string) string {
+	switch transfer {
+	case "smpte2084":
+		return HDRPQ
+	case "arib-std-b67":
+		return HDRHLG
+	}
+	return ""
+}
 
 // Stream types.
 const (
@@ -52,6 +72,8 @@ type Stream struct {
 	ChannelLayout   string `json:"channelLayout,omitempty"`
 	Width           int    `json:"width,omitempty"`
 	Height          int    `json:"height,omitempty"`
+	ColorTransfer   string `json:"colorTransfer,omitempty"`
+	ColorPrimaries  string `json:"colorPrimaries,omitempty"`
 	Default         bool   `json:"default,omitempty"`
 	Forced          bool   `json:"forced,omitempty"`
 	HearingImpaired bool   `json:"hearingImpaired,omitempty"`
@@ -151,6 +173,8 @@ type ffprobeOutput struct {
 		Height        int               `json:"height"`
 		Channels      int               `json:"channels"`
 		ChannelLayout string            `json:"channel_layout"`
+		ColorTransfer string            `json:"color_transfer"`
+		ColorPrims    string            `json:"color_primaries"`
 		Tags          map[string]string `json:"tags"`
 		Disposition   map[string]int    `json:"disposition"`
 	} `json:"streams"`
@@ -185,8 +209,10 @@ func parseFFprobe(b []byte) (Info, error) {
 		switch s.CodecType {
 		case StreamVideo:
 			st.Width, st.Height = s.Width, s.Height
+			st.ColorTransfer, st.ColorPrimaries = s.ColorTransfer, s.ColorPrims
 			if info.VideoCodec == "" {
 				info.VideoCodec, info.Width, info.Height = s.CodecName, s.Width, s.Height
+				info.HDR = HDRKind(s.ColorTransfer)
 			}
 		case StreamAudio:
 			st.Channels, st.ChannelLayout = s.Channels, s.ChannelLayout

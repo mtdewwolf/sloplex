@@ -8,6 +8,7 @@ import (
 	"image/jpeg"
 	"os"
 	"os/exec"
+	"strconv"
 	"testing"
 )
 
@@ -104,4 +105,33 @@ func BrightPixels(t testing.TB, ffmpeg, mp4 string, at string) int {
 		}
 	}
 	return n
+}
+
+// AverageLuma returns the mean luma (0-255, full range) of a crop
+// ("w:h:x:y") of the frame at time at.
+func AverageLuma(t testing.TB, ffmpeg, file, at, crop string) int {
+	t.Helper()
+	out, err := exec.Command(ffmpeg, "-v", "error", "-ss", at, "-i", file, "-frames:v", "1",
+		"-vf", "crop="+crop+",scale=1:1:flags=area,format=gray", "-f", "rawvideo", "pipe:1").Output()
+	if err != nil || len(out) != 1 {
+		t.Fatalf("average luma of %s at %s: %v (%d bytes)", file, at, err, len(out))
+	}
+	return int(out[0])
+}
+
+// WriteHDRClip encodes a 10-bit HEVC clip tagged with the given transfer
+// (smpte2084 or arib-std-b67) whose left half has luma code leftCode and
+// right half rightCode (10-bit limited range). It skips the test when
+// libx265 is unavailable.
+func WriteHDRClip(t testing.TB, ffmpeg, path, transfer string, leftCode, rightCode int) {
+	t.Helper()
+	geq := "color=c=black:s=640x360:d=2:r=10,format=yuv420p10le,geq=lum='if(lt(X,320)," +
+		strconv.Itoa(leftCode) + "," + strconv.Itoa(rightCode) + ")':cb=512:cr=512"
+	out, err := exec.Command(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i", geq,
+		"-c:v", "libx265", "-pix_fmt", "yuv420p10le",
+		"-x265-params", "colorprim=bt2020:transfer="+transfer+":colormatrix=bt2020nc:log-level=error",
+		"-color_primaries", "bt2020", "-color_trc", transfer, "-colorspace", "bt2020nc", path).CombinedOutput()
+	if err != nil {
+		t.Skipf("cannot encode an HDR clip (libx265 missing?): %v %s", err, out)
+	}
 }

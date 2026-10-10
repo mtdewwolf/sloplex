@@ -34,6 +34,7 @@ Sloplex is a standalone product:
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC  |
+| HDR to SDR                         | ✅ HDR10 (PQ) and HLG tone mapped when transcoding |
 | Hardware transcoding               | ✅ VAAPI, Intel QSV, NVIDIA NVENC, Apple VideoToolbox; auto-detected, falls back to software |
 | Audio tracks and subtitles         | ✅ per-user track choice, sidecar `.srt/.vtt/.ass`, embedded text and image subs, burn-in |
 

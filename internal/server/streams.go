@@ -114,6 +114,12 @@ func displayTitles(st library.Stream) (string, string) {
 		default:
 			res += "p"
 		}
+		switch probe.HDRKind(st.ColorTransfer) {
+		case probe.HDRPQ:
+			res += " HDR10"
+		case probe.HDRHLG:
+			res += " HLG"
+		}
 		t = fmt.Sprintf("%s (%s)", res, codecName(st.Codec))
 	case probe.StreamAudio:
 		t = fmt.Sprintf("%s (%s %s)", name, codecName(st.Codec), layoutName(st.Channels))
