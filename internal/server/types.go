@@ -121,8 +121,10 @@ type Metadata struct {
 	Index       *int  `xml:"index,attr,omitempty" json:"index,omitempty"`
 	ParentIndex *int  `xml:"parentIndex,attr,omitempty" json:"parentIndex,omitempty"`
 	Duration    int64 `xml:"duration,attr,omitempty" json:"duration,omitempty"`
-	ChildCount  int   `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
-	LeafCount   int   `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
+	// OriginallyAvailableAt is an air or release date, YYYY-MM-DD.
+	OriginallyAvailableAt string `xml:"originallyAvailableAt,attr,omitempty" json:"originallyAvailableAt,omitempty"`
+	ChildCount            int    `xml:"childCount,attr,omitempty" json:"childCount,omitempty"`
+	LeafCount             int    `xml:"leafCount,attr,omitempty" json:"leafCount,omitempty"`
 
 	// Artwork; see docs/spec/artwork.md.
 	Thumb            string `xml:"thumb,attr,omitempty" json:"thumb,omitempty"`

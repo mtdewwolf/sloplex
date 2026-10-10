@@ -31,7 +31,7 @@ Sloplex is a standalone product:
 | Direct play (byte-range streaming) | ✅                                       |
 | Watched/resume state, On Deck      | ✅ scrobble, timeline, unwatched filter  |
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
-| Date-based TV episodes             | ⏳                                       |
+| Date-based TV episodes             | ✅ `Show - 2024-03-15.mkv`, seasons by year |
 | Music                              | ⏳                                       |
 | External metadata agents           | ⏳                                       |
 | Transcoding                        | ✅ HLS and progressive MP4 to H.264/AAC; WebM (VP9/Opus) for browsers without H.264 |
@@ -125,6 +125,8 @@ warning if it does. Raise it with
 `sysctl fs.inotify.max_user_watches=524288`.
 
 TV libraries expect `<root>/<Show Name (Year)>/Season NN/<file with S01E02>`.
+Daily shows can use the air date instead, as in
+`The Daily Show - 2024-03-15 - Guest.mkv`; they get one season per year.
 See "Show sections" in [docs/spec/http-api.md](docs/spec/http-api.md) for the
 full naming rules.
 

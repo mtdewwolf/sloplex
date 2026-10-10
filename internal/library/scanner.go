@@ -196,7 +196,7 @@ func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string,
 			sc.log.Debug("skipping file without episode number", "path", path)
 			return ScannedFile{}, false
 		}
-		f.Show, f.ShowYear, f.Season, f.Episode, f.Title = ep.Show, ep.ShowYear, ep.Season, ep.Episode, ep.Title
+		f.Show, f.ShowYear, f.Season, f.Episode, f.Title, f.Aired = ep.Show, ep.ShowYear, ep.Season, ep.Episode, ep.Title, ep.Aired
 	default:
 		return ScannedFile{}, false
 	}

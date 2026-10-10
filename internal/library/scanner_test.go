@@ -2,8 +2,10 @@ package library
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -142,5 +144,37 @@ func TestScanShows(t *testing.T) {
 	eps := s.Leaves(shows[0].ID)
 	if len(eps) != 2 || eps[0].Title != "Pilot" || eps[1].Title != "Episode 2" || eps[0].Media[0].Duration != 5000 {
 		t.Errorf("episodes = %+v", eps)
+	}
+}
+
+func TestScanDateShows(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "The Daily Show", "The Daily Show - 2024-03-15 - Guest.mkv"), "x")
+	writeFile(t, filepath.Join(root, "The Daily Show", "The.Daily.Show.2024.03.15.1080p.mkv"), "x")
+	writeFile(t, filepath.Join(root, "The Daily Show", "The Daily Show - 2024-01-02.mkv"), "x")
+	writeFile(t, filepath.Join(root, "The Daily Show", "The Daily Show - 2023-12-31.mkv"), "x")
+
+	s, _ := Open("")
+	if err := s.SyncSections([]SectionDef{{Title: "TV", Type: TypeShow, Paths: []string{root}}}, t0); err != nil {
+		t.Fatal(err)
+	}
+	sec := s.Sections()[0].ID
+	if _, err := NewScanner(s, &countingProber{}, nil).Scan(context.Background(), sec); err != nil {
+		t.Fatal(err)
+	}
+	shows := s.Items(sec, TypeShow)
+	if len(shows) != 1 {
+		t.Fatalf("shows = %+v", shows)
+	}
+	var got []string
+	for _, season := range s.Children(shows[0].ID) {
+		got = append(got, season.Title)
+		for _, ep := range s.Children(season.ID) {
+			got = append(got, fmt.Sprintf("%d %s %s x%d", ep.Index, ep.Aired, ep.Title, len(ep.Media)))
+		}
+	}
+	want := "2023|1231 2023-12-31 2023-12-31 x1|2024|102 2024-01-02 2024-01-02 x1|315 2024-03-15 Guest x2"
+	if strings.Join(got, "|") != want {
+		t.Errorf("seasons and episodes =\n%s\nwant\n%s", strings.Join(got, "|"), want)
 	}
 }

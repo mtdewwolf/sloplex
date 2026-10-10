@@ -111,7 +111,7 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 	}
 	if base != nil {
 		changed = changed || len(base.Media) != len(it.Media) || base.Title != it.Title ||
-			base.Year != it.Year || base.ParentID != it.ParentID || base.Index != it.Index
+			base.Year != it.Year || base.ParentID != it.ParentID || base.Index != it.Index || base.Aired != it.Aired
 		if changed {
 			a.stats.Updated++
 		}
@@ -207,14 +207,23 @@ func (a *applier) shows(files []ScannedFile) {
 			epNums, eps := groupBy(seasons[n], func(f ScannedFile) int { return f.Episode })
 			for _, e := range epNums {
 				g := eps[e]
-				title := fmt.Sprintf("Episode %d", e)
+				title, aired := "", ""
 				for _, f := range g {
-					if f.Title != "" {
+					if title == "" {
 						title = f.Title
-						break
+					}
+					if aired == "" {
+						aired = f.Aired
 					}
 				}
-				ep := &Item{SectionID: a.sec.ID, Type: TypeEpisode, ParentID: season.ID, Index: e, Title: title}
+				switch {
+				case title != "":
+				case aired != "":
+					title = aired
+				default:
+					title = fmt.Sprintf("Episode %d", e)
+				}
+				ep := &Item{SectionID: a.sec.ID, Type: TypeEpisode, ParentID: season.ID, Index: e, Title: title, Aired: aired}
 				seasonChanged = a.leaf(ep, g) || seasonChanged
 			}
 			if seasonChanged || oldKids[season.ID] != len(epNums) {

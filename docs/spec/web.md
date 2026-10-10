@@ -43,6 +43,8 @@ token as a query parameter.
 - Sections are listed, then their items, as a poster grid.
   - Posters come from `/photo/:/transcode`.
   - Shows open into seasons, and seasons into episodes.
+  - Episodes are labelled `S1E2`, or by air date (`originallyAvailableAt`)
+    for date-based episodes, whose season numbers are years.
 - Search uses `/hubs/search`.
 - Selecting a movie or episode plays its first part with the browser's
   `<video>` element:

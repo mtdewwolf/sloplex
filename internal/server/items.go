@@ -261,17 +261,18 @@ func metadataKey(id int) string { return "/library/metadata/" + strconv.Itoa(id)
 func (s *Server) metadata(it library.Item, acct int) Metadata {
 	rk := strconv.Itoa(it.ID)
 	md := Metadata{
-		XMLName:           xmlName(it.Type),
-		RatingKey:         rk,
-		Key:               metadataKey(it.ID),
-		GUID:              fmt.Sprintf("sloplex://%s/%s", it.Type, rk),
-		Type:              it.Type,
-		Title:             it.Title,
-		Year:              it.Year,
-		AddedAt:           it.AddedAt,
-		UpdatedAt:         it.UpdatedAt,
-		LibrarySectionID:  it.SectionID,
-		LibrarySectionKey: fmt.Sprintf("/library/sections/%d", it.SectionID),
+		XMLName:               xmlName(it.Type),
+		RatingKey:             rk,
+		Key:                   metadataKey(it.ID),
+		GUID:                  fmt.Sprintf("sloplex://%s/%s", it.Type, rk),
+		Type:                  it.Type,
+		Title:                 it.Title,
+		Year:                  it.Year,
+		OriginallyAvailableAt: it.Aired,
+		AddedAt:               it.AddedAt,
+		UpdatedAt:             it.UpdatedAt,
+		LibrarySectionID:      it.SectionID,
+		LibrarySectionKey:     fmt.Sprintf("/library/sections/%d", it.SectionID),
 	}
 	if st := library.SortTitle(it.Title); st != strings.ToLower(it.Title) {
 		md.TitleSort = st

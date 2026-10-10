@@ -143,3 +143,38 @@ func TestTVXMLElements(t *testing.T) {
 		t.Errorf("episodes not rendered as Video:\n%s", b)
 	}
 }
+
+func TestDateBasedEpisodes(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "The Daily Show", "The Daily Show - 2024-03-15 - Guest.mkv")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, _ := library.Open("")
+	if err := store.SyncSections([]library.SectionDef{{Title: "TV", Type: library.TypeShow, Paths: []string{root}}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	sc := library.NewScanner(store, fakeProber{}, nil)
+	if _, err := sc.Scan(context.Background(), store.Sections()[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{FriendlyName: "test", MachineID: "abc123", Version: "0.0.1", Tokens: []string{testToken}}
+	f := &fixture{srv: startServer(t, opts, store, sc, ""), store: store, root: root}
+
+	show := f.getJSON(t, "/library/sections/1/all").Metadata[0]
+	seasons := f.getJSON(t, show.Key)
+	if titles(seasons) != "2024" || *seasons.Metadata[0].Index != 2024 {
+		t.Fatalf("seasons = %+v", seasons.Metadata)
+	}
+	ep := f.getJSON(t, seasons.Metadata[0].Key).Metadata[0]
+	if ep.Title != "Guest" || *ep.Index != 315 || *ep.ParentIndex != 2024 || ep.OriginallyAvailableAt != "2024-03-15" {
+		t.Errorf("episode = %+v", ep)
+	}
+	code, _, body := f.raw(t, ep.Key, testToken)
+	if code != 200 || !strings.Contains(string(body), `originallyAvailableAt="2024-03-15"`) {
+		t.Errorf("XML episode = %d\n%s", code, body)
+	}
+}

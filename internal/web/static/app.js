@@ -196,7 +196,7 @@ function tile(item) {
   }
   let sub = item.year ? String(item.year) : "";
   if (item.type === "episode") {
-    sub = `${item.grandparentTitle || ""} · S${item.parentIndex}E${item.index}`;
+    sub = `${item.grandparentTitle || ""} · ${episodeLabel(item)}`;
   } else if (item.type === "season") {
     sub = `${item.leafCount || 0} episodes`;
   }
@@ -253,7 +253,8 @@ async function viewItem(id) {
   const add = (k, v) => { if (v) facts.push(el("dt", { text: k }), el("dd", { text: v })); };
   if (item.type === "episode") {
     add("Show", item.grandparentTitle);
-    add("Episode", `Season ${item.parentIndex}, episode ${item.index}`);
+    if (!dateBased(item)) add("Episode", `Season ${item.parentIndex}, episode ${item.index}`);
+    add("Aired", item.originallyAvailableAt);
   }
   add("Year", item.year && String(item.year));
   add("Duration", fmtDuration(item.duration));
@@ -316,6 +317,14 @@ function trackPickers(part, onChange) {
       sub: subs.find((s) => String(s.id) === subSel.value) || null,
     }),
   };
+}
+
+// Date-based episodes are numbered by year and month/day (see "Date-based
+// episodes" in docs/spec/http-api.md), so they are labelled by air date.
+function dateBased(item) { return item.parentIndex >= 1000 && !!item.originallyAvailableAt; }
+
+function episodeLabel(item) {
+  return dateBased(item) ? item.originallyAvailableAt : `S${item.parentIndex}E${item.index}`;
 }
 
 function watchButtons(item, refresh) {

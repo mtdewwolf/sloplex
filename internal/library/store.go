@@ -55,9 +55,11 @@ type Item struct {
 	ParentID int `json:"parentId,omitempty"`
 	// Index is the season number of a season or the episode number of an
 	// episode.
-	Index     int     `json:"index,omitempty"`
-	Title     string  `json:"title"`
-	Year      int     `json:"year,omitempty"`
+	Index int    `json:"index,omitempty"`
+	Title string `json:"title"`
+	Year  int    `json:"year,omitempty"`
+	// Aired is an episode's air date (YYYY-MM-DD), when known.
+	Aired     string  `json:"aired,omitempty"`
 	AddedAt   int64   `json:"addedAt"`
 	UpdatedAt int64   `json:"updatedAt"`
 	Media     []Media `json:"media,omitempty"`
@@ -127,7 +129,9 @@ type ScannedFile struct {
 	ShowYear int
 	Season   int
 	Episode  int
-	Info     probe.Info
+	// Aired is the air date of a date-based episode (YYYY-MM-DD).
+	Aired string
+	Info  probe.Info
 	// Sidecars are subtitle files next to the video (ID unset).
 	Sidecars []Stream
 	// Changed is set when the file is new or was modified since the last scan.
