@@ -1,0 +1,119 @@
+name: Release
+
+# Publishes the container image and a GitHub release; see docs/releases.md.
+# Start it from the Actions tab with a version, or by pushing a tag v1.2.3.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, such as 0.2.0 or 0.3.0-rc.1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash # with pipefail, unlike the default shell
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # the git tag and the release
+      packages: write # the image
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Work out the version and image tags
+        id: release
+        env:
+          REQUESTED: ${{ inputs.version || github.ref_name }}
+        run: |
+          mapfile -t existing < <(git tag --list 'v*')
+          python3 .github/scripts/release_tags.py "$REQUESTED" "${existing[@]}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the commit
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin "$DEFAULT_BRANCH"
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            echo "::error::Releases are made from commits on $DEFAULT_BRANCH."
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            if [ "$GITHUB_REF_NAME" != "$TAG" ]; then
+              echo "::error::Name the tag $TAG."
+              exit 1
+            fi
+          elif git rev-parse --quiet --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::$TAG already exists; choose a new version."
+            exit 1
+          fi
+
+      - name: Log in to the GitHub container registry
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build, smoke-test and push the image
+        id: image
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          TAGS: ${{ steps.release.outputs.tags }}
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          read -ra image_tags <<< "$TAGS"
+          deploy/publish-image.sh "$repo" "$VERSION" "${image_tags[@]}" | tee "$RUNNER_TEMP/publish.log"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "image=$(tail -n 1 "$RUNNER_TEMP/publish.log")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TAGS: ${{ steps.release.outputs.tags }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          LATEST: ${{ steps.release.outputs.latest }}
+          REPO: ${{ steps.image.outputs.repo }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          notes="$RUNNER_TEMP/image.md"
+          {
+            echo "## Container image"
+            echo
+            echo "Pinned to this build: \`$IMAGE\`"
+            echo
+            printf 'Tags:'
+            for t in $TAGS; do printf " \`%s:%s\`" "$REPO" "$t"; done
+            echo
+            echo
+            echo "To update a TrueNAS install, see [Update and rollback](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/deploy-truenas.md#update-and-rollback)."
+          } > "$notes"
+          cat "$notes" >> "$GITHUB_STEP_SUMMARY"
+          flags=(--latest="$LATEST")
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Someone wrote the release by hand: keep their notes.
+            { gh release view "$TAG" --json body --jq .body; echo; cat "$notes"; } > "$RUNNER_TEMP/notes.md"
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "Sloplex $VERSION" \
+              --generate-notes --notes-file "$notes" "${flags[@]}"
+          fi

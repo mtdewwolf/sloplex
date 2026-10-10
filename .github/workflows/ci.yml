@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
+    branches: ["**"] # release.yml runs these checks for tags
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -59,6 +61,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Release tag rules
+        run: python3 -m unittest discover -s .github/scripts
       - name: Build CPU image (local only, no registry publication)
         run: docker build --build-arg VERSION="${GITHUB_SHA}" -t sloplex:ci .
       - name: Exercise Compose security, media tools, auth and persistence

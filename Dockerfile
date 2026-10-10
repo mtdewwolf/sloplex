@@ -25,5 +25,15 @@ ENV TMPDIR=/tmp
 EXPOSE 32400/tcp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl --fail --silent --output /dev/null http://127.0.0.1:32400/identity || exit 1
+# Last, so a new version reuses the cached package layer.
+ARG VERSION=container-dev
+ARG REVISION=unknown
+ARG CREATED
+LABEL org.opencontainers.image.title="Sloplex" \
+      org.opencontainers.image.description="A self-hosted media server for Plex-compatible apps" \
+      org.opencontainers.image.source="https://github.com/mtdewwolf/sloplex" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.created="${CREATED}"
 ENTRYPOINT ["/usr/local/bin/sloplex"]
 CMD ["-config", "/config/sloplex.json"]
