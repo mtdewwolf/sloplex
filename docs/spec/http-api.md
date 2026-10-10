@@ -11,6 +11,8 @@
   - the numeric item types (1 movie, 2 show, 3 season, 4 episode);
   - the `X-Plex-*` header names;
   - the endpoint paths, including `/children` and `/allLeaves`.
+- The `inotify` interface used for watching comes from the Linux man pages
+  (`inotify(7)`).
 - Items marked **(sloplex)** are our own choices.
 
 ## Transport
@@ -232,8 +234,9 @@ Starts an asynchronous rescan of the section and returns `200` with an empty
 body. **Admins only**; other accounts get `403`; see
 [accounts.md](accounts.md).
 
-- **(sloplex)** If a scan of that section is already running, this is a no-op
-  that still returns `200`.
+- **(sloplex)** If a scan of that section is already running, one more scan
+  is queued to run after it, so changes made during the running scan are
+  not missed. See **When scans run**.
 - Returns 404 if the section is unknown.
 
 ### `GET /library/recentlyAdded`
@@ -296,6 +299,43 @@ Streams the original file bytes ("direct play").
 - If a configured root path is missing or unreadable, the scan aborts and the
   section's existing items stay as they are. This keeps an unmounted drive
   from wiping the library.
+
+### When scans run
+
+A section is scanned:
+
+- at startup;
+- on `GET|PUT /library/sections/{id}/refresh`;
+- when its folders change, if watching is on (see **Watching**);
+- every `scanInterval` (config; default `1h`). `0` turns interval scans off.
+  This is the backup for changes that watching cannot see.
+
+**Queueing.** A scan requested while the same section is being scanned runs
+once more when the current scan finishes. Requests made during that wait
+are merged into that one extra scan.
+
+### Watching
+
+With `watch` set (config; default `true`), the server watches every
+directory under each section's paths, except the directories the scanner
+skips.
+
+- These count as changes:
+  - a file or directory being created, deleted, or renamed;
+  - a file being closed after writing.
+- Names that start with `.` are ignored. Copy tools such as rsync use them
+  for files still in transfer, and then rename the file into place.
+- A section is scanned once its changes settle: 5 s after the last change,
+  but no later than 60 s after the first.
+- New directories are watched as they appear.
+- Watching uses Linux `inotify`.
+  - On other systems, the server logs that watching is unavailable and
+    relies on interval scans.
+  - Network file systems (NFS, SMB) do not report changes made by other
+    machines, so they also rely on interval scans.
+  - If the kernel's watch limit (`fs.inotify.max_user_watches`) is reached,
+    the server logs a warning. Directories beyond the limit are covered by
+    interval scans only.
 
 ### Movie sections
 

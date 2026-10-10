@@ -134,6 +134,8 @@ func run(configPath string, log *slog.Logger) error {
 	for _, sec := range store.Sections() {
 		scanner.Start(ctx, sec.ID)
 	}
+	interval, _ := cfg.ScanEvery() // checked by Validate
+	scanner.Auto(ctx, library.AutoOptions{Watch: cfg.Watch, Interval: interval})
 
 	srv := server.New(ctx, server.Options{
 		FriendlyName:    cfg.FriendlyName,

@@ -6,6 +6,8 @@
   "allowedNetworks": [],
   "hwaccel": "auto",
   "maxTranscodes": 2,
+  "watch": true,
+  "scanInterval": "1h",
   "libraries": [
     { "title": "Movies", "type": "movie", "paths": ["/srv/media/movies"] },
     { "title": "TV Shows", "type": "show", "paths": ["/srv/media/tv"] }

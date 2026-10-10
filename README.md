@@ -23,6 +23,7 @@ Sloplex is a standalone product:
 | Multiple users                     | ✅ accounts, passwords, per-device tokens, per-user watch history |
 | Per-user library restrictions      | ✅ e.g. a kids account that sees only the kids library |
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
+| Automatic library updates          | ✅ folder watching (Linux inotify), hourly backup scan |
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
 | Search                             | ✅ `/hubs/search`, `/search`, per-section; accent-insensitive, prefix matching |
@@ -110,6 +111,19 @@ The full API is in [docs/spec/accounts.md](docs/spec/accounts.md).
 
 ### Libraries
 
+New, changed, and deleted files are picked up on their own:
+
+- On Linux, Sloplex watches the library folders and rescans a library about
+  5 seconds after changes stop.
+- Every library is also rescanned every hour (`scanInterval`). This catches
+  changes that watching can't see, such as files changed by another machine
+  on a network share, and covers macOS and Windows, where watching isn't
+  available.
+
+A very large library can exceed Linux's default watch limit; Sloplex logs a
+warning if it does. Raise it with
+`sysctl fs.inotify.max_user_watches=524288`.
+
 TV libraries expect `<root>/<Show Name (Year)>/Season NN/<file with S01E02>`.
 See "Show sections" in [docs/spec/http-api.md](docs/spec/http-api.md) for the
 full naming rules.
@@ -190,6 +204,8 @@ Set `"hwaccel": "none"` to always use software.
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
 | `hwaccel`         | `"auto"`       | `auto`, `none`, `vaapi`, `qsv`, `nvenc`, or `videotoolbox` |
 | `hwaccelDevice`   | `/dev/dri/renderD128` | GPU render node for `vaapi` and `qsv`              |
+| `watch`           | `true`         | Rescan a library when its folders change (Linux)          |
+| `scanInterval`    | `"1h"`         | Rescan every library this often (at least `1m`); `"0"` turns it off |
 | `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
 
 ## Layout
@@ -199,7 +215,8 @@ cmd/sloplex/        entrypoint
 internal/config/    config file loading and validation
 internal/identity/  machine identifier and owner master token
 internal/accounts/  user accounts, password hashes, issued tokens
-internal/library/   section/item store, filename parsing, scanner
+internal/library/   section/item store, filename parsing, scanner, automatic scans
+internal/fswatch/   folder watching (inotify)
 internal/playstate/ per-account watched/resume state
 internal/probe/     ffprobe wrapper
 internal/artwork/   frame grabs and cached image resizing

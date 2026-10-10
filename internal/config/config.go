@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Library describes one library section to serve.
@@ -38,9 +39,14 @@ type Config struct {
 	MaxTranscodes int `json:"maxTranscodes"`
 	// Hwaccel selects hardware transcoding: none, auto, vaapi, qsv, nvenc
 	// or videotoolbox. HwaccelDevice is the DRM node for vaapi and qsv.
-	Hwaccel       string    `json:"hwaccel"`
-	HwaccelDevice string    `json:"hwaccelDevice"`
-	Libraries     []Library `json:"libraries"`
+	Hwaccel       string `json:"hwaccel"`
+	HwaccelDevice string `json:"hwaccelDevice"`
+	// Watch scans libraries when their folders change.
+	Watch bool `json:"watch"`
+	// ScanInterval is a Go duration ("1h", "30m") between full scans of
+	// every library; "0" turns them off.
+	ScanInterval string    `json:"scanInterval"`
+	Libraries    []Library `json:"libraries"`
 }
 
 // SupportedTypes lists the library types the server can scan.
@@ -60,6 +66,8 @@ func Default() Config {
 		MaxTranscodes: 2,
 		Hwaccel:       "auto",
 		HwaccelDevice: "/dev/dri/renderD128",
+		Watch:         true,
+		ScanInterval:  "1h",
 	}
 }
 
@@ -104,6 +112,9 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("hwaccel %q: want none, auto, vaapi, qsv, nvenc or videotoolbox", c.Hwaccel)
 	}
+	if _, err := c.ScanEvery(); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for i, lib := range c.Libraries {
 		if lib.Title == "" {
@@ -122,6 +133,18 @@ func (c Config) Validate() error {
 		seen[key] = true
 	}
 	return nil
+}
+
+// ScanEvery parses ScanInterval; 0 means no interval scans.
+func (c Config) ScanEvery() (time.Duration, error) {
+	if c.ScanInterval == "" || c.ScanInterval == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(c.ScanInterval)
+	if err != nil || d < time.Minute {
+		return 0, fmt.Errorf("scanInterval %q: want a duration of at least 1m, such as \"1h\", or \"0\"", c.ScanInterval)
+	}
+	return d, nil
 }
 
 // Port returns the TCP port from Listen.
