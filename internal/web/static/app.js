@@ -748,6 +748,7 @@ async function viewAdmin() {
   state.allSections = state.sections;
   const accounts = (await api("GET", "/sloplex/accounts")).accounts || [];
   const tc = await api("GET", "/sloplex/transcoder").catch(() => null);
+  const version = container(await api("GET", "/identity").catch(() => null)).version;
 
   const rows = accounts.map((a) => el("tr", {},
     el("td", {}, el("strong", { text: a.name }), a.id === 1 ? el("div", { class: "muted", text: "owner" }) : null),
@@ -787,6 +788,8 @@ async function viewAdmin() {
     state.sections.length ? refresh : el("p", { class: "muted", text: "No libraries configured." }),
     el("h2", { text: "Transcoding" }),
     el("p", { id: "transcoder", text: transcoderSummary(tc) }),
+    el("h2", { text: "Server" }),
+    el("p", { id: "version", text: version ? `Sloplex ${version}` : "Version unknown." }),
     el("div", { id: "admin-panel" }));
 }
 

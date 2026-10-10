@@ -68,6 +68,8 @@ await page.click("#nav-admin");
 await page.waitForSelector("h1:text('Admin')");
 const transcoder = await page.textContent("#transcoder");
 s.check(transcoder.includes("up to") && transcoder.includes("HDR tone mapping on the CPU"), `admin page shows the transcoder: ${transcoder}`);
+const version = await page.textContent("#version");
+s.check(/^Sloplex \d+\.\d+\.\d+/.test(version), `admin page shows the server version: ${version}`);
 await page.click("button:text('New account')");
 await page.fill("#admin-panel input:not([type])", "kid");
 await page.fill("#admin-panel input[type=password]", "cartoons1");

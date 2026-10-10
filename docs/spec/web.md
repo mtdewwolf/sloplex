@@ -117,6 +117,8 @@ See [playlists.md](playlists.md).
   - name, password, admin flag, and library access;
   - issue a device token, whose value is shown once.
 - Refresh library sections.
+- Show how the server transcodes, and its version from `/identity`, so an
+  admin can confirm which release is running.
 
 ### Text handling
 
