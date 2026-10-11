@@ -91,12 +91,17 @@ func (a *authenticator) isPublic(path string) bool {
 		strings.HasPrefix(path, "/video/:/transcode/universal/session/")
 }
 
-// resolve returns the principal for a request's token, if valid.
-func (a *authenticator) resolve(r *http.Request) (principal, bool) {
-	tok := r.Header.Get(tokenHeader)
-	if tok == "" {
-		tok = r.URL.Query().Get(tokenHeader)
+// requestToken returns the token a request supplies in its header or,
+// failing that, its query string, or "" if it supplies none.
+func requestToken(r *http.Request) string {
+	if tok := r.Header.Get(tokenHeader); tok != "" {
+		return tok
 	}
+	return r.URL.Query().Get(tokenHeader)
+}
+
+// resolve returns the principal for a token, if valid.
+func (a *authenticator) resolve(tok string) (principal, bool) {
 	if tok == "" {
 		return principal{}, false
 	}
@@ -136,11 +141,11 @@ func (a *authenticator) trustedPeer(remote string) bool {
 
 func (a *authenticator) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p, ok := a.resolve(r)
+		tok := requestToken(r)
+		p, ok := a.resolve(tok)
 		// Opt-in hardening preserves legacy trusted-network behavior by default.
 		// A revoked device credential must not become an owner credential.
-		supplied := r.Header.Get(tokenHeader) != "" || r.URL.Query().Get(tokenHeader) != ""
-		if !ok && supplied && a.strict && !a.isPublic(r.URL.Path) {
+		if !ok && tok != "" && a.strict && !a.isPublic(r.URL.Path) {
 			http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
 			return
 		}
