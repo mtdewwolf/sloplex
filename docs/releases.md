@@ -35,22 +35,42 @@ does the same.
 The workflow:
 
 1. Runs every CI check: Go tests, browser suites, and the container test.
-2. Refuses a malformed version or a commit that is not on the default
-   branch. Started from the Actions tab, it also refuses a version that
-   already has a tag, and creates the tag in step 5.
+2. Refuses a malformed version, a commit that is not on the default
+   branch, and a version without its release notes. Started from the
+   Actions tab, it also refuses a version that already has a tag, and
+   creates the tag in step 5.
 3. Builds the image with the version built in and checks that it reports
    it. Then it runs the container smoke test against the image.
 4. Pushes the image tags. A version tag that already exists in the
    registry is never overwritten.
-5. Creates the GitHub release with generated notes, the image's digest,
-   and its tags. If the release was already written by hand, the image
-   details are added to its notes.
+5. Creates the GitHub release from the release notes, then the image's
+   digest and tags. If the release was already written by hand, its notes
+   are kept and the image details are added.
 
 `deploy/publish-image.sh` holds steps 3 and 4. Run it from a clean checkout
 to publish to another registry.
 
 If a run fails after pushing some tags, don't reuse the version: release
 the next patch version.
+
+## Release notes
+
+Each release has its notes in `docs/release-notes/VERSION.md`, such as
+`docs/release-notes/0.3.2.md`, committed to the default branch before the
+release starts. The release page shows that file, then the image details.
+
+Write the notes for someone running Sloplex, not for the commit log:
+
+- Start with what changed for them, in plain words.
+- Say what to do when a step is needed, such as replacing the `tailscale:`
+  block in the TrueNAS guide, or a stored-data change (see
+  [Versions and image tags](#versions-and-image-tags)).
+- End with the compare link, `**Full Changelog**:
+  https://github.com/mtdewwolf/sloplex/compare/vPREVIOUS...vVERSION`, which
+  lists every commit.
+
+Leave out the image details: the workflow adds them. An empty or missing
+file stops the release before anything is built or pushed.
 
 ## Package visibility
 
