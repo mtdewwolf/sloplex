@@ -320,7 +320,7 @@ shows any problem; see **Troubleshooting** below. After that:
 - On a phone or laptop signed in to your tailnet, open
   `https://sloplex.<your-tailnet>.ts.net/web/`. The admin console's **DNS**
   page shows your tailnet's name. The very first visit can take a few
-  seconds while the certificate is issued. Releases after 0.3.0 also send
+  seconds while the certificate is issued. Sloplex 0.3.1 and later also send
   a browser from the bare address to `/web/`.
 
 If you added Tailscale with an earlier version of this guide, replace your
@@ -337,7 +337,7 @@ dataset.
 | The log shows a login link, and the container restarts about every minute | The auth key is mistyped, expired or already used. Generate a new one and save, or open the link within the minute. |
 | `sloplex` is connected, but the browser can't reach it | Check that the phone or laptop has Tailscale on, and that **MagicDNS** and **HTTPS Certificates** are enabled on the admin console's **DNS** page. Addresses by Tailscale IP don't work; use the name. |
 | The name is `sloplex-1` | An old `sloplex` device already exists. Delete it in the admin console; the name is free for the next login. |
-| **401 Unauthorized** at the bare address | That is the address apps use. Add `/web/` to reach the web app. Releases after 0.3.0 send a browser there by themselves. |
+| **401 Unauthorized** at the bare address | That is the address apps use. Add `/web/` to reach the web app. Sloplex 0.3.1 and later send a browser there by themselves. |
 
 ### Keeping it private
 
