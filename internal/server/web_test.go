@@ -37,6 +37,44 @@ func TestWebApp(t *testing.T) {
 	if resp := get("/web"); resp.StatusCode != 301 || resp.Header.Get("Location") != "/web/" {
 		t.Errorf("/web = %s -> %q", resp.Status, resp.Header.Get("Location"))
 	}
+	// A browser opening the bare address lands on the app; apps, and anyone
+	// sending a token, still get the server root.
+	const browser = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+	for _, c := range []struct {
+		method, accept string
+		token          bool
+		status         int
+	}{
+		{"GET", browser, false, 302},
+		{"HEAD", browser, false, 302},
+		{"GET", "application/xml", false, 401},
+		{"GET", "", false, 401},
+		{"POST", browser, false, 401},
+		{"GET", browser, true, 200},
+	} {
+		req, _ := http.NewRequest(c.method, f.srv.URL+"/", nil)
+		if c.accept != "" {
+			req.Header.Set("Accept", c.accept)
+		}
+		if c.token {
+			req.Header.Set(tokenHeader, testToken)
+		}
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != c.status || (c.status == 302) != (resp.Header.Get("Location") == "/web/") {
+			t.Errorf("%s / Accept=%q token=%v: %s -> %q, want %d", c.method, c.accept, c.token, resp.Status, resp.Header.Get("Location"), c.status)
+		}
+	}
+	req, _ := http.NewRequest("GET", f.srv.URL+"/?X-Plex-Token="+testToken, nil)
+	req.Header.Set("Accept", browser)
+	if resp, err := noRedirect.Do(req); err != nil || resp.StatusCode != 200 {
+		t.Errorf("/ from a browser with a query token: %v %v", resp, err)
+	} else {
+		resp.Body.Close()
+	}
 	if resp := get("/web/app.js"); resp.StatusCode != 200 || !strings.Contains(resp.Header.Get("Content-Type"), "javascript") {
 		t.Errorf("app.js = %s %q", resp.Status, resp.Header.Get("Content-Type"))
 	}

@@ -10,7 +10,8 @@ describe.
 
 ## Serving
 
-- `GET /web/` serves the app. `GET /web` redirects to it.
+- `GET /web/` serves the app. `GET /web` redirects to it, and so does a
+  browser's `GET /` without a token (see [http-api.md](http-api.md#get-)).
 - The app is static HTML, CSS, and JavaScript embedded in the server binary.
   It has no external dependencies and makes no requests to other hosts.
 - `/web/` and everything under it needs no token, because the files contain

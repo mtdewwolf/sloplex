@@ -36,6 +36,8 @@ These requests never require a token:
 - `POST /sloplex/auth/login`;
 - `GET /web/` and everything under it (static app files; see
   [web.md](web.md));
+- a browser's `GET /` without a token, which only redirects to `/web/`
+  (see [http-api.md](http-api.md#get-));
 - transcode session URLs under `/video/:/transcode/universal/session/`.
   They are authorised by their random session ID; see
   [transcode.md](transcode.md);

@@ -188,6 +188,12 @@ Returns the server root. The container carries `friendlyName`,
 `machineIdentifier`, `version`, `platform`, `platformVersion`, and
 `updatedAt`. Its children are Directories with key `library`.
 
+**(sloplex)** A browser opening the server's address is sent to the web app
+instead. A `GET` or `HEAD` for `/` with no token whose `Accept` header
+includes `text/html` gets `302 Found` with `Location: /web/`, before any
+authentication. Apps ask for XML or JSON, and a request with a token always
+gets the root.
+
 ### `GET /library`
 
 Returns Directories with keys `sections` and `recentlyAdded`, which are

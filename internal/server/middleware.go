@@ -38,6 +38,20 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+// browserHome sends a browser that opens the server's bare address to the
+// web app instead of a 401. Apps ask for XML or JSON, or send a token, and
+// get the server root as before.
+func browserHome(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+			requestToken(r) == "" && strings.Contains(r.Header.Get("Accept"), "text/html") {
+			http.Redirect(w, r, "/web/", http.StatusFound)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // principal is who a request is authenticated as.
 type principal struct {
 	AccountID int

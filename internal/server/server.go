@@ -153,7 +153,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET "+path, h)
 		mux.HandleFunc("PUT "+path, h)
 	}
-	return logRequests(s.log, cors(s.auth.wrap(mux)))
+	return logRequests(s.log, cors(browserHome(s.auth.wrap(mux))))
 }
 
 func (s *Server) handleIdentity(w http.ResponseWriter, r *http.Request) {
