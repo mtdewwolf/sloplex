@@ -153,8 +153,10 @@ func TestRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { c.Run(ctx, 10*time.Millisecond, time.Hour); close(done) }()
+	// Wait for the check to finish, not just to reach the server: cancelling
+	// while the reply is on its way would fail the check.
 	deadline := time.Now().Add(5 * time.Second)
-	for calls.Load() == 0 && time.Now().Before(deadline) {
+	for c.Status().CheckedAt == 0 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	cancel()
