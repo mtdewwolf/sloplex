@@ -18,9 +18,11 @@ func (s *Server) collectionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /library/sections/{id}/collections", s.handleSectionCollections)
 	mux.HandleFunc("GET /library/collections/{id}", s.handleCollection)
 	mux.HandleFunc("GET /library/collections/{id}/children", s.handleCollectionChildren)
+	mux.HandleFunc("GET /library/collections/{id}/items", s.handleCollectionChildren)
 	mux.HandleFunc("POST /library/collections", s.requireAdmin(s.handleCreateCollection))
 	mux.HandleFunc("PUT /library/collections/{id}", s.requireAdmin(s.handleRenameCollection))
 	mux.HandleFunc("DELETE /library/collections/{id}", s.requireAdmin(s.handleDeleteCollection))
+	mux.HandleFunc("DELETE /library/sections/{id}/collection/{collection}", s.requireAdmin(s.handleDeleteSectionCollection))
 	mux.HandleFunc("PUT /library/collections/{id}/items", s.requireAdmin(s.handleAddToCollection))
 	mux.HandleFunc("DELETE /library/collections/{id}/items/{item}", s.requireAdmin(s.handleRemoveFromCollection))
 }
@@ -261,6 +263,31 @@ func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
+	s.deleteCollection(w, r, c)
+}
+
+// handleDeleteSectionCollection is the documented section-scoped form of
+// delete; see docs/spec/wire-conformance.md. A collection of another
+// section is 404, so naming the wrong section deletes nothing.
+func (s *Server) handleDeleteSectionCollection(w http.ResponseWriter, r *http.Request) {
+	sec, ok := s.section(w, r)
+	if !ok {
+		return
+	}
+	id, err := strconv.Atoi(r.PathValue("collection"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.store.Collection(id)
+	if err != nil || c.SectionID != sec.ID {
+		http.NotFound(w, r)
+		return
+	}
+	s.deleteCollection(w, r, c)
+}
+
+func (s *Server) deleteCollection(w http.ResponseWriter, r *http.Request, c library.Collection) {
 	if err := s.store.DeleteCollection(c.ID); err != nil {
 		s.collectionError(w, r, err)
 		return

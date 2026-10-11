@@ -233,6 +233,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err)
 		return
 	}
+	s.revokeSessions()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -264,6 +265,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err)
 		return
 	}
+	s.revokeSessions()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -290,6 +292,7 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err)
 		return
 	}
+	s.revokeSessions()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -358,6 +361,7 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err)
 		return
 	}
+	s.revokeSessions()
 	writeJSON(w, http.StatusOK, viewAccount(a))
 }
 
@@ -370,6 +374,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, err)
 		return
 	}
+	s.revokeSessions()
 	if err := s.play.DeleteAccount(id); err != nil {
 		s.log.Error("delete play state", "account", id, "err", err)
 	}

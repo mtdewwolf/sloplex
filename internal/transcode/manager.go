@@ -60,13 +60,23 @@ type Manager struct {
 	wg       sync.WaitGroup
 }
 
+// Owner is the authority a transcode was started under; see
+// docs/spec/session-authorization.md.
+type Owner struct {
+	Account int
+	// Token is the issued token the transcode was started with, or 0 for a
+	// credential that cannot be revoked while the server runs: an owner
+	// master token or a trusted network.
+	Token int
+}
+
 // Session is a running or finished HLS transcode.
 type Session struct {
-	ID      string
-	Account int
-	Label   string
-	ItemID  int
-	Plan    Plan
+	ID string
+	Owner
+	Label  string
+	ItemID int
+	Plan   Plan
 	// Request is the request the session was started with.
 	Request   Request
 	dir       string
@@ -85,7 +95,10 @@ type Session struct {
 
 type streamInfo struct {
 	id       string
+	owner    Owner
 	itemID   int
+	partID   int
+	cancel   context.CancelFunc
 	plan     Plan
 	source   probe.Info
 	started  time.Time
@@ -332,9 +345,9 @@ func (m *Manager) activeLocked() int {
 	return n
 }
 
-// StartHLS starts an HLS session. A running session with the same account
-// and non-empty label is stopped first.
-func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*Session, error) {
+// StartHLS starts an HLS session for owner. A running session with the same
+// account and non-empty label is stopped first.
+func (m *Manager) StartHLS(owner Owner, label string, itemID int, r Request) (*Session, error) {
 	if !m.Available() {
 		return nil, ErrUnavailable
 	}
@@ -346,7 +359,7 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 	var replaced []*Session
 	if label != "" {
 		for id, s := range m.sessions {
-			if s.Account == account && s.Label == label {
+			if s.Account == owner.Account && s.Label == label {
 				replaced = append(replaced, s)
 				delete(m.sessions, id)
 			}
@@ -363,7 +376,7 @@ func (m *Manager) StartHLS(account int, label string, itemID int, r Request) (*S
 	p := Decide(r)
 	load := m.choosePresetLocked(r, &p)
 	load += m.chooseLevelsLocked(r, &p, load)
-	s := &Session{ID: newID(), Account: account, Label: label, ItemID: itemID, Plan: p, Request: r,
+	s := &Session{ID: newID(), Owner: owner, Label: label, ItemID: itemID, Plan: p, Request: r,
 		done: make(chan struct{}), load: load, nudge: make(chan struct{}, 1)}
 	s.dir = filepath.Join(m.dir, s.ID)
 	s.lastTouch.Store(time.Now().UnixNano())
@@ -397,6 +410,7 @@ func (m *Manager) runHLS(ctx context.Context, s *Session, r Request, attempts []
 			return
 		}
 		cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, s.Plan, Output{HLSDir: s.dir}, pl)...)
+		cmd.WaitDelay = time.Second // Bound inherited pipes after exit or cancellation.
 		cmd.Dir = s.dir
 		var stderr bytes.Buffer
 		cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}
@@ -497,6 +511,54 @@ func (m *Manager) Ping(account int, label string) int {
 		s.lastTouch.Store(time.Now().UnixNano())
 	}
 	return len(found)
+}
+
+// Revoke stops every HLS session and progressive stream for which allowed
+// returns false, and returns how many it stopped. allowed is called without
+// m's lock held.
+func (m *Manager) Revoke(allowed func(o Owner, itemID int) bool) int {
+	return m.RevokeSources(func(o Owner, itemID, partID int) bool { return allowed(o, itemID) })
+}
+
+// RevokeSources additionally checks the exact source part of each transcode.
+// This keeps healthy versions running when another version becomes unavailable.
+func (m *Manager) RevokeSources(allowed func(o Owner, itemID, partID int) bool) int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	sessions := slices.Collect(maps.Values(m.sessions))
+	streams := slices.Collect(maps.Keys(m.streams))
+	m.mu.Unlock()
+
+	var stale []*Session
+	for _, s := range sessions {
+		if !allowed(s.Owner, s.ItemID, s.Request.PartID) {
+			stale = append(stale, s)
+		}
+	}
+	var cut []*streamInfo
+	for _, st := range streams {
+		if !allowed(st.owner, st.itemID, st.partID) {
+			cut = append(cut, st)
+		}
+	}
+	m.mu.Lock()
+	// A session may have been stopped or replaced meanwhile; only remove
+	// the one that was checked.
+	stale = slices.DeleteFunc(stale, func(s *Session) bool { return m.sessions[s.ID] != s })
+	for _, s := range stale {
+		delete(m.sessions, s.ID)
+	}
+	m.mu.Unlock()
+	for _, st := range cut {
+		st.cancel()
+	}
+	for _, s := range stale {
+		m.log.Info("transcode revoked", "session", s.ID, "account", s.Account)
+	}
+	m.cleanup(stale)
+	return len(stale) + len(cut)
 }
 
 // List describes all running transcodes.
@@ -658,10 +720,10 @@ func listedSegments(path string) (map[string]bool, error) {
 	return out, sc.Err()
 }
 
-// Stream writes a fragmented MP4 transcode to w until it ends or ctx is
-// cancelled. ready is called once the transcode has a slot, before any
-// output.
-func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer, ready func(Plan)) error {
+// Stream writes a fragmented MP4 transcode for owner to w until it ends, ctx
+// is cancelled, or Revoke stops it. ready is called once the transcode has a
+// slot, before any output.
+func (m *Manager) Stream(ctx context.Context, owner Owner, itemID int, r Request, w io.Writer, ready func(Plan)) error {
 	if !m.Available() {
 		return ErrUnavailable
 	}
@@ -676,7 +738,9 @@ func (m *Manager) Stream(ctx context.Context, itemID int, r Request, w io.Writer
 		return ErrBusy
 	}
 	load := m.choosePresetLocked(r, &p)
-	st := &streamInfo{id: newID(), itemID: itemID, plan: p, source: r.Source, started: time.Now(), load: load}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	st := &streamInfo{id: newID(), owner: owner, itemID: itemID, partID: r.PartID, cancel: cancel, plan: p, source: r.Source, started: time.Now(), load: load}
 	m.streams[st] = struct{}{}
 	m.mu.Unlock()
 	defer func() {
@@ -724,6 +788,7 @@ func (m *Manager) streamOnce(ctx context.Context, r Request, p Plan, pl Pipeline
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, m.ffmpeg, Args(r, p, Output{}, pl)...)
+	cmd.WaitDelay = time.Second // Bound inherited pipes after exit or cancellation.
 	cmd.Dir = workdir
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 8 << 10}

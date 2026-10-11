@@ -31,7 +31,7 @@ func (s *Server) generated(it library.Item, kind string) (artwork.Still, artwork
 	default:
 		return 0, artwork.Source{}, false
 	}
-	if !s.art.CanGenerate() || len(it.Media) == 0 || len(it.Media[0].Parts) == 0 {
+	if !s.art.CanGenerate() || len(it.Media) == 0 || !it.Media[0].Available() {
 		return 0, artwork.Source{}, false
 	}
 	m, p := it.Media[0], it.Media[0].Parts[0]

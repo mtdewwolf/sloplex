@@ -23,6 +23,7 @@ Sloplex is a standalone product:
 | Multiple users                     | ✅ accounts, passwords, per-device tokens, per-user watch history |
 | Per-user library restrictions      | ✅ e.g. a kids account that sees only the kids library |
 | Movie libraries: scan and browse   | ✅ title/year parsing, versions, ffprobe |
+| Retained unavailable media / trash | ✅ preserves IDs/history through missing-file scans; explicit admin empty trash ([contract](docs/spec/trash.md)), no automatic purge |
 | Automatic library updates          | ✅ folder watching (Linux inotify), hourly backup scan |
 | TV libraries: show → season → episode | ✅ `S01E02`, `1x02`, season folders, specials |
 | Paging and sorting                 | ✅                                       |
@@ -123,6 +124,13 @@ each account.
 The full API is in [docs/spec/accounts.md](docs/spec/accounts.md).
 
 ### Libraries
+
+For stable library identity, give each configured library an `id`, such as
+`{"id":"movies-main","title":"Movies","type":"movie","paths":["/media/movies"]}`.
+Keep this ID when changing the display title. To adopt an existing library,
+first add the ID without changing its title/type, start the server once,
+then rename it. Ambiguous replacements are rejected; see
+[library identity](docs/spec/library-identity.md).
 
 New, changed, and deleted files are picked up on their own:
 
@@ -263,13 +271,13 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 
 | Key               | Default        | Meaning                                                   |
 |-------------------|----------------|-----------------------------------------------------------|
-| `friendlyName`    | hostname       | The name shown to clients                                 |
+| `friendlyName`    | hostname       | The name shown to clients while the `FriendlyName` preference is blank |
 | `listen`          | `:32400`       | HTTP listen address                                       |
-| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `playlists.json`, `truenas.json`, `cache/` |
+| `dataDir`         | `data`         | Holds `identity.json`, `accounts.json`, `library.json`, `playstate.json`, `playlists.json`, `truenas.json`, `preferences.json`, `cache/` |
 | `discovery`       | `true`         | Answer GDM searches on UDP 32414                          |
 | `tokens`          | `[]`           | Extra owner master tokens                                 |
 | `allowedNetworks` | `[]`           | CIDRs that may skip tokens; tokenless requests act as the owner |
-| `strictTokenAuth` | `false`        | Reject an invalid or revoked token with `401` even from `allowedNetworks`, instead of falling back to the owner |
+| `strictTokenAuth` | obsolete       | Accepted for old configs; invalid/revoked tokens are always refused, regardless of this value |
 | `ffprobe`         | `""`           | ffprobe path; `""` searches `PATH`, `"-"` disables probing |
 | `ffmpeg`          | `""`           | ffmpeg path for transcoding and episode thumbnails; `""` searches `PATH`, `"-"` disables |
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
@@ -282,7 +290,14 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 | `transcodeThrottle` | `true`       | Pause HLS transcodes that are far ahead of the player     |
 | `updateCheck`     | `true`         | Look for a newer release on GitHub once a day; admins can always check from the Admin page |
 | `updateURL`       | `""`           | Release lookup address; `""` is this repository's latest GitHub release |
-| `libraries`       | `[]`           | `{title, type: "movie" or "show", paths: [...]}`          |
+| `libraries`       | `[]`           | `{id: "stable-name", title, type: "movie" or "show", paths: [...]}`; `id` is optional for legacy configs |
+
+Admins can change a few settings while the server runs through `GET`/`PUT
+/:/prefs`: the server name, periodic scans, folder watching, GDM discovery
+and debug logging. Values set there are kept in `dataDir/preferences.json`
+and take precedence over `friendlyName`, `scanInterval`, `watch`,
+`discovery` and `-debug`. See
+[docs/spec/preferences.md](docs/spec/preferences.md).
 
 ## Layout
 
@@ -304,6 +319,7 @@ internal/subtitles/ subtitle extraction, conversion and shifting
 internal/lang/      language code normalisation
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder
+internal/preferences/ server preferences registry and stored values
 docs/spec/          the clean-room protocol specification
 ```
 

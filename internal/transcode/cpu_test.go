@@ -139,7 +139,7 @@ func TestManagerPresets(t *testing.T) {
 	stream := func(m *Manager) Plan {
 		var plan Plan
 		var buf bytes.Buffer
-		if err := m.Stream(context.Background(), 1, Request{Input: path, Source: clipInfo}, &buf, func(p Plan) { plan = p }); err != nil {
+		if err := m.Stream(context.Background(), Owner{Account: 1}, 1, Request{Input: path, Source: clipInfo}, &buf, func(p Plan) { plan = p }); err != nil {
 			t.Fatal(err)
 		}
 		return plan

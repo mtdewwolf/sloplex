@@ -1,0 +1,229 @@
+{
+  "format": "sloplex-wire-operations/1",
+  "description": "Operations touched by the G10 / Claude F-10 wire-conformance work. It is not an inventory of every S1 operation, and an entry is not evidence that a real client works.",
+  "updated": "2026-10-11",
+  "review_refs": [
+    "G10",
+    "Claude F-10"
+  ],
+  "sources": {
+    "S1": {
+      "title": "Plex Media Server API reference (OpenAPI 3.1.0)",
+      "url": "https://developer.plex.tv/pms/",
+      "document_version": "1.2.3",
+      "stated_pms_floor": "1.43.4",
+      "license": "Apache-2.0",
+      "retrieved": "2026-10-11",
+      "sha256": "e1ea0ead7722693de15e807a7d9e1e70885464dae47aa32a8f4ef1844a746138",
+      "use": "Paths, methods, parameter names, documented statuses and the timeline response shape only. No schema or prose copied."
+    }
+  },
+  "status_values": {
+    "implemented": "The S1 method and path are routed to an existing Sloplex feature, with documented differences.",
+    "not_implemented": "Routed to nothing. The method gets 405 or the path 404. The reason is recorded.",
+    "open": "A difference S1 documents that this work did not address."
+  },
+  "evidence": {
+    "live_pms_differential": false,
+    "official_client_tested": false,
+    "note": "All results come from Sloplex's own tests against docs/spec. No PMS or client traffic was observed."
+  },
+  "operations": [
+    {
+      "method": "POST",
+      "path": "/:/timeline",
+      "source": "S1",
+      "operation_id": "timelinePostSlash",
+      "status": "partial",
+      "legacy_forms": [
+        "GET /:/timeline",
+        "PUT /:/timeline"
+      ],
+      "spec": "docs/spec/wire-conformance.md#post-timeline",
+      "code": "internal/server/playstate.go:handleTimelinePost",
+      "tests": [
+        "internal/server/wireconformance_test.go:TestTimelinePost",
+        "internal/server/wireconformance_test.go:TestTimelinePostAccounts",
+        "internal/server/wireconformance_test.go:TestTimelinePostShowIsBadRequest",
+        "internal/server/wireconformance_test.go:TestTimelinePostPersists"
+      ],
+      "parameters_not_honored": [
+        "playQueueItemID",
+        "continuing",
+        "updated",
+        "offline",
+        "timeToFirstFrame",
+        "timeStalled",
+        "bandwidth",
+        "bufferedTime",
+        "bufferedSize",
+        "X-Plex-Session-Identifier"
+      ],
+      "differences": [
+        "X-Plex-Client-Identifier is also accepted as a query parameter (sloplex).",
+        "The response never carries terminationCode, terminationText or Bandwidths."
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/library/sections/{sectionId}/refresh",
+      "source": "S1",
+      "operation_id": "librarySectionPostRefresh",
+      "status": "partial",
+      "legacy_forms": [
+        "GET /library/sections/{id}/refresh",
+        "PUT /library/sections/{id}/refresh"
+      ],
+      "spec": "docs/spec/wire-conformance.md#post-librarysectionssectionidrefresh",
+      "code": "internal/server/server.go:handleRefreshPost",
+      "tests": [
+        "internal/server/wireconformance_test.go:TestRefreshPost"
+      ],
+      "parameters_not_honored": [],
+      "differences": [
+        "force values other than 0 and 1 are rejected with 400 (sloplex).",
+        "Unsupported forced/path-limited requests return 501 without scheduling a scan."
+      ],
+      "parameters_rejected": [
+        "force=1",
+        "nonempty path"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/library/sections/{sectionId}/refresh",
+      "source": "S1",
+      "operation_id": "librarySectionDeleteRefresh",
+      "status": "not_implemented",
+      "observed_response": 405,
+      "spec": "docs/spec/wire-conformance.md#delete-librarysectionssectionidrefresh-not-implemented",
+      "tests": [
+        "internal/server/wireconformance_test.go:TestRefreshPost"
+      ],
+      "reason": "The scanner has no cancellation hook for scans started at startup, by the watcher or on an interval, so request-only cancellation would not match the documented behavior."
+    },
+    {
+      "method": "GET",
+      "path": "/library/collections/{collectionId}/items",
+      "source": "S1",
+      "operation_id": "libraryCollectionCollectionGetItems",
+      "status": "implemented",
+      "legacy_forms": [
+        "GET /library/collections/{id}/children"
+      ],
+      "spec": "docs/spec/wire-conformance.md#get-librarycollectionscollectioniditems",
+      "code": "internal/server/collections.go:handleCollectionChildren",
+      "tests": [
+        "internal/server/wireconformance_test.go:TestCollectionItemsAlias"
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/library/sections/{sectionId}/collection/{collectionId}",
+      "source": "S1",
+      "operation_id": "librarySectionDeleteCollectionCollection",
+      "status": "implemented",
+      "legacy_forms": [
+        "DELETE /library/collections/{id}"
+      ],
+      "spec": "docs/spec/wire-conformance.md#delete-librarysectionssectionidcollectioncollectionid",
+      "code": "internal/server/collections.go:handleDeleteSectionCollection",
+      "tests": [
+        "internal/server/wireconformance_test.go:TestSectionCollectionDelete"
+      ],
+      "differences": [
+        "A collection of another section is 404 and is not deleted (sloplex).",
+        "Automatic (.nfo) collections are 400."
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/library/streams/{streamId}.{ext}",
+      "source": "S1",
+      "operation_id": "libraryGetStreamsStream",
+      "status": "partial",
+      "legacy_forms": [
+        "GET /library/streams/{id}"
+      ],
+      "spec": "docs/spec/wire-conformance.md#get-librarystreamsstreamidext",
+      "code": "internal/server/streams.go:handleStreamFile",
+      "tests": [
+        "internal/server/wireconformance_test.go:TestStreamExtPath",
+        "internal/server/wireconformance_test.go:TestStreamExtPathConverts (needs ffmpeg)"
+      ],
+      "supported_ext": [
+        "srt",
+        "vtt",
+        "ass",
+        "ssa"
+      ],
+      "parameters_not_honored": [],
+      "differences": [
+        "The extension picks the output format when format is absent (sloplex).",
+        "Hidden libraries are 404, not 403 (sloplex).",
+        "Embedded text subtitles are served too; non-subtitle and image streams are 501.",
+        "Unsupported encoding/automatic adjustment requests return 501; legacy extensionless route unchanged."
+      ],
+      "parameters_rejected": [
+        "nonempty encoding",
+        "autoAdjustSubtitle other than empty or 0"
+      ]
+    },
+    {
+      "method": "PUT",
+      "path": "/library/streams/{streamId}.{ext}",
+      "source": "S1",
+      "operation_id": "libraryPutStreamsStream",
+      "status": "not_implemented",
+      "observed_response": 405,
+      "tests": [
+        "internal/server/wireconformance_test.go:TestStreamExtPath"
+      ],
+      "reason": "Sloplex stores no per-stream offset."
+    },
+    {
+      "method": "DELETE",
+      "path": "/library/streams/{streamId}.{ext}",
+      "source": "S1",
+      "operation_id": "libraryDeleteStreamsStream",
+      "status": "not_implemented",
+      "observed_response": 405,
+      "tests": [
+        "internal/server/wireconformance_test.go:TestStreamExtPath"
+      ],
+      "reason": "Sloplex does not delete media or sidecar files."
+    },
+    {
+      "method": "PUT",
+      "path": "/:/scrobble",
+      "source": "S1",
+      "operation_id": "putScrobble",
+      "status": "open",
+      "reason": "The uri parameter and the required identifier are not handled. The URI grammar needs its own spec work."
+    },
+    {
+      "method": "PUT",
+      "path": "/:/unscrobble",
+      "source": "S1",
+      "operation_id": "putUnscrobble",
+      "status": "open",
+      "reason": "Same as /:/scrobble."
+    },
+    {
+      "method": "PUT",
+      "path": "/library/collections/{collectionId}/items/{itemId}",
+      "source": "S1",
+      "operation_id": "libraryCollectionCollectionPutItemsItem",
+      "status": "open",
+      "reason": "S1 removes an item with PUT. Sloplex uses DELETE on the same path. Not aliased in this work."
+    },
+    {
+      "method": "PUT",
+      "path": "/library/collections/{collectionId}/items/{itemId}/move",
+      "source": "S1",
+      "operation_id": "libraryCollectionCollectionPutItemsItemMove",
+      "status": "open",
+      "reason": "Collections have no manual order. Their order is derived by year and title."
+    }
+  ]
+}

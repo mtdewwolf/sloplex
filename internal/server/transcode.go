@@ -4,13 +4,16 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mtdewwolf/sloplex/internal/accounts"
 	"github.com/mtdewwolf/sloplex/internal/lang"
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/probe"
@@ -61,6 +64,10 @@ func (s *Server) transcodeTarget(w http.ResponseWriter, r *http.Request) (librar
 		return library.Item{}, transcode.Request{}, false
 	}
 	media := it.Media[mi]
+	if !media.Available() {
+		http.NotFound(w, r)
+		return library.Item{}, transcode.Request{}, false
+	}
 	req := transcode.Request{Input: media.Parts[pi].File, Source: media.Info, NoDirectStream: q.Get("directStream") == "0"}
 	if v := q.Get("offset"); v != "" {
 		off, err := strconv.ParseFloat(v, 64)
@@ -187,12 +194,19 @@ func (s *Server) handleTranscodeHLS(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sess, err := s.tc.StartHLS(s.account(r), r.URL.Query().Get("session"), it.ID, req)
+	caller, _ := principalOf(r)
+	sess, err := s.tc.StartHLS(caller.owner(), r.URL.Query().Get("session"), it.ID, req)
 	if err != nil {
 		if !errors.Is(err, transcode.ErrBusy) && !errors.Is(err, transcode.ErrUnavailable) {
 			s.log.Error("start transcode", "item", it.ID, "err", err)
 		}
 		transcodeError(w, err)
+		return
+	}
+	// A scan or authority change may have completed during registration.
+	if !s.sessionAllowed(sess.Owner, it.ID) || !s.store.PartAvailable(req.PartID) {
+		s.revokeSessions()
+		http.NotFound(w, r)
 		return
 	}
 	p := sess.Plan
@@ -276,9 +290,8 @@ func (s *Server) subtitleChoice(r *http.Request, part library.Part) *library.Str
 // handleTranscodeSubs serves a session's subtitle rendition playlist and
 // WebVTT document.
 func (s *Server) handleTranscodeSubs(w http.ResponseWriter, r *http.Request) {
-	sess, ok := s.tc.Session(r.PathValue("sid"))
+	sess, ok := s.session(w, r)
 	if !ok {
-		http.NotFound(w, r)
 		return
 	}
 	id, err := strconv.Atoi(r.PathValue("stream"))
@@ -342,10 +355,47 @@ func (s *Server) handleTranscodeSubs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleTranscodeFile(w http.ResponseWriter, r *http.Request) {
+// sessionAllowed reports whether the authority a transcode was started
+// under still holds: the account exists, the issued token it used is not
+// revoked, and the account may still see the item; see
+// docs/spec/session-authorization.md.
+func (s *Server) sessionAllowed(o transcode.Owner, itemID int) bool {
+	a, err := s.accounts.Account(o.Account)
+	if err != nil {
+		return false
+	}
+	if o.Token != 0 && !slices.ContainsFunc(s.accounts.Tokens(o.Account), func(t accounts.Token) bool { return t.ID == o.Token }) {
+		return false
+	}
+	it, err := s.store.Item(itemID)
+	return err == nil && a.CanSee(it.SectionID) && !it.Unavailable
+}
+
+// revokeSessions stops the transcodes whose authority no longer holds. Call
+// it after any change that can withdraw access.
+func (s *Server) revokeSessions() {
+	s.tc.RevokeSources(func(o transcode.Owner, itemID, partID int) bool {
+		return s.sessionAllowed(o, itemID) && s.store.PartAvailable(partID)
+	})
+}
+
+// session returns the HLS session a session URL names, or writes a 404 if
+// there is none or its authority no longer holds.
+func (s *Server) session(w http.ResponseWriter, r *http.Request) (*transcode.Session, bool) {
 	sess, ok := s.tc.Session(r.PathValue("sid"))
+	if ok && (!s.sessionAllowed(sess.Owner, sess.ItemID) || !s.store.PartAvailable(sess.Request.PartID)) {
+		s.revokeSessions()
+		ok = false
+	}
 	if !ok {
 		http.NotFound(w, r)
+	}
+	return sess, ok
+}
+
+func (s *Server) handleTranscodeFile(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.session(w, r)
+	if !ok {
 		return
 	}
 	var path, ctype string
@@ -400,20 +450,54 @@ func (s *Server) transcodeStream(w http.ResponseWriter, r *http.Request, webm bo
 	if webm {
 		ctype = "video/webm"
 	}
+	p, _ := principalOf(r)
+	owner := p.owner()
+	// Access withdrawn between authentication and the stream's registration
+	// with the manager is not seen by revokeSessions, so check again once
+	// the stream is registered and refuse its output if it no longer holds.
+	gw := &gatedWriter{w: w, allowed: func() bool { return s.sessionAllowed(owner, it.ID) && s.store.PartAvailable(req.PartID) }}
 	started := false
-	err := s.tc.Stream(r.Context(), it.ID, req, w, func(transcode.Plan) {
+	err := s.tc.Stream(r.Context(), owner, it.ID, req, gw, func(transcode.Plan) {
+		if !gw.allowed() {
+			gw.closed = true
+			return
+		}
 		started = true
 		w.Header().Set("Content-Type", ctype)
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	})
 	switch {
+	case !started && (gw.closed || err == nil):
+		// Refused at the recheck, or revoked before any output.
+		http.NotFound(w, r)
+	case gw.closed:
+		// Output already started: end it without appending an HTTP error body.
 	case err == nil:
 	case !started:
 		transcodeError(w, err)
 	default:
 		s.log.Warn("transcode stream ended with error", "item", it.ID, "err", err)
 	}
+}
+
+// gatedWriter passes writes to w until it is closed.
+type gatedWriter struct {
+	w       io.Writer
+	allowed func() bool
+	closed  bool
+}
+
+var errRevoked = errors.New("access revoked")
+
+func (g *gatedWriter) Write(b []byte) (int, error) {
+	if g.allowed != nil && !g.allowed() {
+		g.closed = true
+	}
+	if g.closed {
+		return 0, errRevoked
+	}
+	return g.w.Write(b)
 }
 
 func (s *Server) handleTranscodeStop(w http.ResponseWriter, r *http.Request) {

@@ -70,7 +70,7 @@ func TestStreamWebM(t *testing.T) {
 	var buf bytes.Buffer
 	r := Request{Input: video, Offset: 5, WebM: true, MaxWidth: 320, MaxHeight: 180,
 		Source: probe.Info{VideoCodec: "mpeg4", AudioCodec: "mp2", AudioChannels: 1, Width: 640, Height: 360}}
-	if err := m.Stream(context.Background(), 1, r, &buf, func(Plan) {}); err != nil {
+	if err := m.Stream(context.Background(), Owner{Account: 1}, 1, r, &buf, func(Plan) {}); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "out.webm")

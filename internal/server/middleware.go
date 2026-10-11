@@ -7,10 +7,12 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/mtdewwolf/sloplex/internal/accounts"
+	"github.com/mtdewwolf/sloplex/internal/transcode"
 )
 
 const tokenHeader = "X-Plex-Token"
@@ -21,7 +23,10 @@ var corsAllowHeaders = "Accept, Content-Type, Range, " +
 	"X-Plex-Container-Start, X-Plex-Container-Size"
 
 // cors allows browser clients from any origin. Credentials travel in
-// headers or query parameters, never cookies, so a wildcard is safe.
+// headers or query parameters, never cookies. Tokenless trusted-network
+// access, the one ambient credential, is refused to other origins by
+// authenticator.wrap, so the wildcard exposes nothing a token does not
+// already grant; see "Browser origins" in docs/spec/auth.md.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -60,6 +65,11 @@ type principal struct {
 	TokenID int
 }
 
+// owner is the authority a transcode started by p runs under.
+func (p principal) owner() transcode.Owner {
+	return transcode.Owner{Account: p.AccountID, Token: p.TokenID}
+}
+
 type principalKey struct{}
 
 func principalOf(r *http.Request) (principal, bool) {
@@ -73,7 +83,6 @@ type authenticator struct {
 	accounts *accounts.Store
 	networks []netip.Prefix
 	public   map[string]bool
-	strict   bool
 }
 
 func newAuthenticator(master []string, networks []netip.Prefix, accts *accounts.Store) *authenticator {
@@ -153,18 +162,51 @@ func (a *authenticator) trustedPeer(remote string) bool {
 	return false
 }
 
+// crossOrigin reports whether a browser marked r as sent by a page of
+// another origin; see "Browser origins" in docs/spec/auth.md. Only headers
+// a page cannot set itself are used, and forwarding headers are ignored.
+func crossOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return false
+	case "":
+	default:
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Not a browser, or an older browser's same-origin or no-cors
+		// request.
+		return false
+	}
+	u, err := url.Parse(origin)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return err != nil || !strings.EqualFold(u.Scheme, scheme) || u.Host == "" ||
+		u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
+		!strings.EqualFold(u.Host, r.Host)
+}
+
 func (a *authenticator) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok := requestToken(r)
 		p, ok := a.resolve(tok)
-		// Opt-in hardening preserves legacy trusted-network behavior by default.
-		// A revoked device credential must not become an owner credential.
-		if !ok && tok != "" && a.strict && !a.isPublic(r.URL.Path) {
-			http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		if !ok && a.trustedPeer(r.RemoteAddr) {
-			p, ok = principal{AccountID: accounts.OwnerID}, true
+		switch {
+		case ok:
+		case tok != "":
+			// A supplied credential that does not resolve is never replaced
+			// by network trust, so a revoked device cannot become the owner.
+			if !a.isPublic(r.URL.Path) {
+				http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+				return
+			}
+		case a.trustedPeer(r.RemoteAddr):
+			w.Header().Add("Vary", "Origin, Sec-Fetch-Site")
+			if !crossOrigin(r) {
+				p, ok = principal{AccountID: accounts.OwnerID}, true
+			}
 		}
 		if ok {
 			r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))

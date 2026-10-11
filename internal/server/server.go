@@ -21,6 +21,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playlists"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
+	"github.com/mtdewwolf/sloplex/internal/preferences"
 	"github.com/mtdewwolf/sloplex/internal/subtitles"
 	"github.com/mtdewwolf/sloplex/internal/transcode"
 	"github.com/mtdewwolf/sloplex/internal/truenas"
@@ -35,7 +36,6 @@ type Options struct {
 	Version         string
 	Tokens          []string
 	AllowedNetworks []netip.Prefix
-	StrictTokenAuth bool
 	// AutoUpdateCheck says whether the daily update check is on.
 	AutoUpdateCheck bool
 }
@@ -56,7 +56,10 @@ type Deps struct {
 	Updates *updates.Checker
 	// TrueNAS is optional; without it TrueNAS settings are kept in memory.
 	TrueNAS *truenas.Store
-	Log     *slog.Logger // optional
+	// Prefs is optional; without it preferences are kept in memory and
+	// default to Options.FriendlyName.
+	Prefs *preferences.Store
+	Log   *slog.Logger // optional
 }
 
 // Server serves the HTTP API.
@@ -72,6 +75,7 @@ type Server struct {
 	playlists *playlists.Store
 	updates   *updates.Checker
 	truenas   *truenas.Store
+	prefs     *preferences.Store
 	tn        trueNAS
 	logins    *loginLimiter
 	log       *slog.Logger
@@ -96,10 +100,12 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	if d.TrueNAS == nil {
 		d.TrueNAS, _ = truenas.Open("") // in memory; cannot fail
 	}
+	if d.Prefs == nil {
+		d.Prefs, _ = preferences.Open("", preferences.Bootstrap{FriendlyName: opts.FriendlyName}) // in memory; cannot fail
+	}
 	auth := newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts)
-	auth.strict = opts.StrictTokenAuth
 	return &Server{
-		playlists: d.Playlists, updates: d.Updates, truenas: d.TrueNAS, tn: realTrueNAS{},
+		playlists: d.Playlists, updates: d.Updates, truenas: d.TrueNAS, prefs: d.Prefs, tn: realTrueNAS{},
 		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
 		auth:    auth,
@@ -119,6 +125,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /library/sections/{id}/recentlyAdded", s.handleRecentlyAdded)
 	mux.HandleFunc("GET /library/sections/{id}/refresh", s.requireAdmin(s.handleRefresh))
 	mux.HandleFunc("PUT /library/sections/{id}/refresh", s.requireAdmin(s.handleRefresh))
+	mux.HandleFunc("POST /library/sections/{id}/refresh", s.requireAdmin(s.handleRefreshPost))
+	mux.HandleFunc("PUT /library/sections/{id}/emptyTrash", s.requireAdmin(s.handleEmptyTrash))
 	mux.HandleFunc("GET /library/recentlyAdded", s.handleRecentlyAdded)
 	mux.HandleFunc("GET /library/metadata/{id}", s.handleMetadata)
 	mux.HandleFunc("GET /library/metadata/{id}/children", s.handleChildren)
@@ -135,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	s.collectionRoutes(mux)
 	s.playlistRoutes(mux)
 	s.updateRoutes(mux)
+	s.preferenceRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())
 	mux.HandleFunc("GET /web", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
@@ -153,6 +162,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET "+path, h)
 		mux.HandleFunc("PUT "+path, h)
 	}
+	mux.HandleFunc("POST /:/timeline", s.handleTimelinePost)
 	return logRequests(s.log, cors(browserHome(s.auth.wrap(mux))))
 }
 
@@ -162,7 +172,7 @@ func (s *Server) handleIdentity(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	writeContainer(w, r, MediaContainer{
-		FriendlyName:      s.opts.FriendlyName,
+		FriendlyName:      s.prefs.FriendlyName(),
 		MachineIdentifier: s.opts.MachineID,
 		Version:           s.opts.Version,
 		Platform:          runtime.GOOS,
@@ -257,6 +267,22 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// handleRefreshPost is the documented POST form of refresh; see
+// docs/spec/wire-conformance.md. Unsupported scan modes fail explicitly
+// instead of silently starting a broader or weaker scan than requested.
+func (s *Server) handleRefreshPost(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if f := q.Get("force"); f != "" && f != "0" && f != "1" {
+		http.Error(w, "force must be 0 or 1", http.StatusBadRequest)
+		return
+	}
+	if q.Get("force") == "1" || q.Get("path") != "" {
+		http.Error(w, "forced and partial-path scans are not implemented", http.StatusNotImplemented)
+		return
+	}
+	s.handleRefresh(w, r)
+}
+
 var contentTypes = map[string]string{
 	".mkv":  "video/x-matroska",
 	".mp4":  "video/mp4",
@@ -279,7 +305,7 @@ func (s *Server) handlePart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	part, sectionID, err := s.store.Part(id)
-	if err != nil || !s.visibility(r)(sectionID) {
+	if err != nil || !s.visibility(r)(sectionID) || !s.store.PartAvailable(id) {
 		http.NotFound(w, r)
 		return
 	}

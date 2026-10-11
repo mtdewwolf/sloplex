@@ -57,12 +57,20 @@ func (s *Server) leafIDs(it library.Item) []int {
 }
 
 func (s *Server) updatePlay(w http.ResponseWriter, r *http.Request, ids []int, fn func(*playstate.State)) {
+	if s.savePlay(w, r, ids, fn) {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// savePlay applies fn to the requesting account's state of ids. It writes
+// only an error, and reports whether the change was saved.
+func (s *Server) savePlay(w http.ResponseWriter, r *http.Request, ids []int, fn func(*playstate.State)) bool {
 	if err := s.play.Update(s.account(r), ids, fn); err != nil {
 		s.log.Error("save play state", "err", err)
 		http.Error(w, "could not save play state", http.StatusInternalServerError)
-		return
+		return false
 	}
-	w.WriteHeader(http.StatusOK)
+	return true
 }
 
 func (s *Server) handleScrobble(w http.ResponseWriter, r *http.Request) {
@@ -87,34 +95,59 @@ func (s *Server) handleUnscrobble(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
-	s.reportPosition(w, r, true)
+	if s.reportPosition(w, r, true) {
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
-	s.reportPosition(w, r, false)
+	if s.reportPosition(w, r, false) {
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// timelineStates are the documented values of state on POST /:/timeline.
+var timelineStates = map[string]bool{"stopped": true, "buffering": true, "playing": true, "paused": true}
+
+// handleTimelinePost is the documented POST form of /:/timeline; see
+// docs/spec/wire-conformance.md. It needs a client identifier, checks
+// state, and answers with an empty MediaContainer.
+func (s *Server) handleTimelinePost(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if r.Header.Get("X-Plex-Client-Identifier") == "" && q.Get("X-Plex-Client-Identifier") == "" {
+		http.Error(w, "X-Plex-Client-Identifier is required", http.StatusBadRequest)
+		return
+	}
+	if st := q.Get("state"); st != "" && !timelineStates[st] {
+		http.Error(w, "state must be stopped, buffering, playing or paused", http.StatusBadRequest)
+		return
+	}
+	if s.reportPosition(w, r, false) {
+		writeContainer(w, r, MediaContainer{})
+	}
 }
 
 // reportPosition applies a playback position using the completion rule in
 // docs/spec/playstate.md. requireTime makes a missing time a 400 rather than
-// a no-op.
-func (s *Server) reportPosition(w http.ResponseWriter, r *http.Request, requireTime bool) {
+// a no-op. It writes only errors, and reports whether the request
+// succeeded.
+func (s *Server) reportPosition(w http.ResponseWriter, r *http.Request, requireTime bool) bool {
 	it, ok := s.playTarget(w, r)
 	if !ok {
-		return
+		return false
 	}
 	if !library.IsLeaf(it.Type) {
 		http.Error(w, "progress applies to movies and episodes only", http.StatusBadRequest)
-		return
+		return false
 	}
 	q := r.URL.Query()
 	t, err := strconv.ParseInt(q.Get("time"), 10, 64)
 	if err != nil {
 		if requireTime || q.Get("time") != "" {
 			http.Error(w, "missing or invalid time", http.StatusBadRequest)
-			return
+			return false
 		}
-		w.WriteHeader(http.StatusOK)
-		return
+		return true
 	}
 	d, err := strconv.ParseInt(q.Get("duration"), 10, 64)
 	if err != nil || d <= 0 {
@@ -124,7 +157,7 @@ func (s *Server) reportPosition(w http.ResponseWriter, r *http.Request, requireT
 		}
 	}
 	now := time.Now().Unix()
-	s.updatePlay(w, r, []int{it.ID}, func(st *playstate.State) {
+	return s.savePlay(w, r, []int{it.ID}, func(st *playstate.State) {
 		switch {
 		case d > 0 && float64(t) >= completeRatio*float64(d):
 			if st.ViewOffset > 0 || st.ViewCount == 0 {

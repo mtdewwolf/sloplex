@@ -128,7 +128,7 @@ func TestHLSFallsBackToSoftware(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer m.Close()
-	s, err := m.StartHLS(1, "x", 9, Request{Input: path, Source: clipInfo, MaxWidth: 320, MaxHeight: 180})
+	s, err := m.StartHLS(Owner{Account: 1}, "x", 9, Request{Input: path, Source: clipInfo, MaxWidth: 320, MaxHeight: 180})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestStreamFallsBackToSoftware(t *testing.T) {
 	defer m.Close()
 	var buf bytes.Buffer
 	readyCalls := 0
-	if err := m.Stream(context.Background(), 1, Request{Input: path, Source: clipInfo}, &buf, func(Plan) { readyCalls++ }); err != nil {
+	if err := m.Stream(context.Background(), Owner{Account: 1}, 1, Request{Input: path, Source: clipInfo}, &buf, func(Plan) { readyCalls++ }); err != nil {
 		t.Fatalf("stream after fallback: %v", err)
 	}
 	if readyCalls != 1 || buf.Len() < 1000 || !bytes.Equal(buf.Bytes()[4:8], []byte("ftyp")) {

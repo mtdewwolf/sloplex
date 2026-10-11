@@ -1,0 +1,317 @@
+[
+  {
+    "id": "G01",
+    "topic": "Scope and cloud boundary",
+    "codex": "F01",
+    "claude": "\u00a73",
+    "priority": "Scope",
+    "summary": "Local accounts and no plex.tv cannot establish complete Plex ecosystem parity.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G02",
+    "topic": "Preferences and library management",
+    "codex": "F02",
+    "claude": "F-13",
+    "priority": "P1",
+    "summary": "No typed runtime preference registry or compatible server/library settings API.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G03",
+    "topic": "Music photos and other videos",
+    "codex": "F03",
+    "claude": "F-14",
+    "priority": "P1",
+    "summary": "Only movie and show libraries exist; additional media models and scanners are required.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G04",
+    "topic": "Library and file identity",
+    "codex": "F04, F06",
+    "claude": "F-02",
+    "priority": "P1",
+    "summary": "Config-title replacement and file-path identity detach existing associations.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G05",
+    "topic": "TV identity after NFO edits",
+    "codex": "F05",
+    "claude": "\u2014",
+    "priority": "P1",
+    "summary": "Show and season identity can churn when editable NFO title/year differs from folder metadata.",
+    "attribution": "Codex"
+  },
+  {
+    "id": "G06",
+    "topic": "Incomplete scans and trash",
+    "codex": "F06",
+    "claude": "F-01",
+    "priority": "P0",
+    "summary": "Unreadable subtrees or empty mountpoints can remove catalog records and associations.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G07",
+    "topic": "Multi episode files editions and parts",
+    "codex": "F07",
+    "claude": "F-15, F-32",
+    "priority": "P1",
+    "summary": "Multiple episodes, stacked parts, editions and matching hints lack complete semantics.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G08",
+    "topic": "Metadata editing and providers",
+    "codex": "F08",
+    "claude": "F-17",
+    "priority": "P1",
+    "summary": "Local NFO parsing does not supply metadata edits, locks, matching or provider APIs.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G09",
+    "topic": "Queues sessions hubs and events",
+    "codex": "F09",
+    "claude": "F-12",
+    "priority": "P1",
+    "summary": "Official-client orchestration families are missing or narrow.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G10",
+    "topic": "Concrete wire method and path mismatches",
+    "codex": "\u2014",
+    "claude": "F-10",
+    "priority": "P1",
+    "summary": "Documented POST timeline, refresh methods, collection paths and stream suffixes need conformance work.",
+    "attribution": "Claude"
+  },
+  {
+    "id": "G11",
+    "topic": "Client capability negotiation",
+    "codex": "F10",
+    "claude": "F-10",
+    "priority": "P1",
+    "summary": "Custom capability parameters do not implement documented profile negotiation.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G12",
+    "topic": "Transcoder settings and modes",
+    "codex": "F11",
+    "claude": "F-19",
+    "priority": "P2",
+    "summary": "Planning controls, bandwidth classification, output modes and lifecycle limits are incomplete.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G13",
+    "topic": "Automatic audio and subtitle language",
+    "codex": "F12",
+    "claude": "F-20; \u00a75.2",
+    "priority": "P1",
+    "summary": "Manual track choice exists; account language selection rules do not.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G14",
+    "topic": "Fine grained user restrictions",
+    "codex": "F13",
+    "claude": "F-20, F-34",
+    "priority": "P1",
+    "summary": "Library-only restrictions omit rating/label, download and other per-user rights.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G15",
+    "topic": "Trusted networks and browser origins",
+    "codex": "F14",
+    "claude": "\u2014",
+    "priority": "P1",
+    "summary": "Tokenless owner access and wildcard CORS create conditional cross-origin exposure.",
+    "attribution": "Codex"
+  },
+  {
+    "id": "G16",
+    "topic": "Invalid token becomes owner",
+    "codex": "F15",
+    "claude": "\u2014",
+    "priority": "P1",
+    "summary": "An explicitly invalid or revoked token falls back to owner on trusted networks unless strict mode is enabled.",
+    "attribution": "Codex"
+  },
+  {
+    "id": "G17",
+    "topic": "Public and all address trusted ranges",
+    "codex": "\u2014",
+    "claude": "F-04",
+    "priority": "P1",
+    "summary": "Configuration permits public CIDRs and 0.0.0.0/0 for tokenless owner access.",
+    "attribution": "Claude"
+  },
+  {
+    "id": "G18",
+    "topic": "HLS capability revocation",
+    "codex": "F16",
+    "claude": "F-08",
+    "priority": "P1",
+    "summary": "Existing session URLs survive account/token or library-access revocation.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G19",
+    "topic": "TLS remote access and discovery",
+    "codex": "F17",
+    "claude": "F-07, F-22, F-23",
+    "priority": "P1",
+    "summary": "Plain HTTP and GDM plus optional tailnet access leave secure/network/DLNA gaps.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G20",
+    "topic": "Analysis extras and local pre rolls",
+    "codex": "F18",
+    "claude": "F-16, F-18, F-35",
+    "priority": "P2",
+    "summary": "Chapters/previews/markers/audio analysis, extras and queue-based pre-rolls are largely missing.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G21",
+    "topic": "Live TV and DVR",
+    "codex": "F19",
+    "claude": "F-24",
+    "priority": "P1",
+    "summary": "Tuner, guide, recording and schedule subsystems are absent; local XMLTV can avoid hosted guides.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G22",
+    "topic": "Collections playlists and search",
+    "codex": "F20",
+    "claude": "F-10; \u00a75.3",
+    "priority": "P2",
+    "summary": "Smart filters, richer editing/search and additional media types remain incomplete.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G23",
+    "topic": "Downloads and optimized versions",
+    "codex": "F21",
+    "claude": "F-25",
+    "priority": "P2",
+    "summary": "Attachment delivery is not durable offline download or optimization jobs.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G24",
+    "topic": "Durability backup and migrations",
+    "codex": "F22",
+    "claude": "F-03",
+    "priority": "P1",
+    "summary": "Atomic rename alone is not durable commit; backups, recovery and migrations need defined guarantees.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G25",
+    "topic": "Scale and resource lifecycle",
+    "codex": "F23",
+    "claude": "F-28",
+    "priority": "P2",
+    "summary": "Full scans/saves, caches and platform behavior need limits and representative measurements.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G26",
+    "topic": "Maintenance diagnostics and activities",
+    "codex": "F23; settings inventory",
+    "claude": "F-21",
+    "priority": "P2",
+    "summary": "Scheduled tasks, cleanup, administration and diagnostic APIs are incomplete.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G27",
+    "topic": "Pagination overflow",
+    "codex": "F24",
+    "claude": "\u2014",
+    "priority": "P2",
+    "summary": "start + size can overflow and panic a request handler.",
+    "attribution": "Codex"
+  },
+  {
+    "id": "G28",
+    "topic": "Interoperability and hardware evidence",
+    "codex": "F25",
+    "claude": "F-11, F-30",
+    "priority": "P1",
+    "summary": "Passing internal tests does not verify PMS/client, physical GPU or deployment parity.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G29",
+    "topic": "Clean room provenance",
+    "codex": "F26",
+    "claude": "F-09",
+    "priority": "P1",
+    "summary": "Generic source descriptions lack precise URLs, versions and lawful observation fixtures.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G30",
+    "topic": "Outbound policy consistency",
+    "codex": "F27",
+    "claude": "F-27",
+    "priority": "P2",
+    "summary": "Absolute offline wording conflicts with documented GitHub and owner-selected TrueNAS exceptions.",
+    "attribution": "Both"
+  },
+  {
+    "id": "G31",
+    "topic": "Proxy login throttling",
+    "codex": "\u2014",
+    "claude": "F-05",
+    "priority": "P2",
+    "summary": "A per-peer limiter can share a lockout across users behind the proxy.",
+    "attribution": "Claude"
+  },
+  {
+    "id": "G32",
+    "topic": "Owner token in logs",
+    "codex": "\u2014",
+    "claude": "F-06",
+    "priority": "P2",
+    "summary": "The recovery/master token is logged and has no exposed rotation workflow.",
+    "attribution": "Claude"
+  },
+  {
+    "id": "G33",
+    "topic": "Local artwork and subtitle conventions",
+    "codex": "\u2014",
+    "claude": "F-31",
+    "priority": "P2",
+    "summary": "Additional poster names, artwork variants, subtitle formats and folders are missing.",
+    "attribution": "Claude"
+  },
+  {
+    "id": "G34",
+    "topic": "Extras directory exclusion depth",
+    "codex": "F07 broad exclusion gap",
+    "claude": "F-33 specific defect",
+    "priority": "P3",
+    "summary": "Claude specifically identifies unconditional directory-name exclusions; Codex flags broad exclusion parity.",
+    "attribution": "Claude specific finding"
+  },
+  {
+    "id": "G35",
+    "topic": "Webhooks push and CI supply chain",
+    "codex": "F17/F27 adjacent only",
+    "claude": "F-26, F-29",
+    "priority": "P3",
+    "summary": "Claude explicitly calls out missing notifications/webhooks and unpinned CI dependencies.",
+    "attribution": "Claude specific finding"
+  }
+]

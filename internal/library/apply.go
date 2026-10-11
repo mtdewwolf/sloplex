@@ -42,9 +42,105 @@ func newApplier(s *Store, sec *Section, now time.Time) *applier {
 }
 
 func (a *applier) finish() {
+	// Reconcile by part ID, not just leaf ID: a scan can regroup known paths
+	// into different leaves. A part represented in new output must not also
+	// appear in a retained old version.
+	observed := map[int]bool{}
+	current := map[int]*Item{}
+	old := map[int]*Item{}
 	for _, it := range a.old {
-		if IsLeaf(it.Type) && !a.taken[it.ID] {
-			a.stats.Removed++
+		old[it.ID] = it
+	}
+	for _, it := range a.out {
+		current[it.ID] = it
+		for _, m := range it.Media {
+			for _, p := range m.Parts {
+				observed[p.ID] = true
+			}
+		}
+	}
+	for _, prev := range a.old {
+		if !IsLeaf(prev.Type) {
+			continue
+		}
+		it := current[prev.ID]
+		var missing []Media
+		for _, m := range prev.Media {
+			var parts []Part
+			for _, p := range m.Parts {
+				if !observed[p.ID] {
+					p.Unavailable = true
+					parts = append(parts, p)
+				}
+			}
+			if len(parts) > 0 {
+				m.Parts = parts
+				missing = append(missing, m)
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		if it == nil {
+			copy := prev.clone()
+			it = &copy
+			it.Media = nil
+			current[it.ID] = it
+			a.out = append(a.out, it)
+		}
+		for _, m := range missing {
+			if i := slices.IndexFunc(it.Media, func(v Media) bool { return v.ID == m.ID }); i >= 0 {
+				it.Media[i].Parts = append(it.Media[i].Parts, m.Parts...)
+			} else {
+				it.Media = append(it.Media, m)
+			}
+		}
+		// A missing version may have supplied the item's local metadata.
+		if it.Meta == nil {
+			applyMeta(it, prev.Meta)
+		}
+		// Restore any ancestors not reached by the readable file list.
+		for id := it.ParentID; id != 0; {
+			ancestor := current[id]
+			if ancestor == nil {
+				base := old[id]
+				if base == nil {
+					break
+				}
+				copy := base.clone()
+				ancestor = &copy
+				current[id] = ancestor
+				a.out = append(a.out, ancestor)
+			}
+			id = ancestor.ParentID
+		}
+	}
+	// Preserve multipart sequence when an earlier part is missing and restored.
+	order := map[int]map[int]int{}
+	for _, prev := range a.old {
+		for _, m := range prev.Media {
+			positions := map[int]int{}
+			for i, p := range m.Parts {
+				positions[p.ID] = i
+			}
+			order[m.ID] = positions
+		}
+	}
+	for _, it := range a.out {
+		for i := range it.Media {
+			m := &it.Media[i]
+			if positions := order[m.ID]; positions != nil {
+				slices.SortStableFunc(m.Parts, func(x, y Part) int { return cmp.Compare(positions[x.ID], positions[y.ID]) })
+			}
+		}
+	}
+	refreshAvailability(a.out)
+	for _, it := range a.out {
+		if prev := old[it.ID]; prev != nil && prev.Unavailable != it.Unavailable {
+			it.UpdatedAt = a.ts
+			if IsLeaf(it.Type) && it.Unavailable {
+				a.stats.Unavailable++
+			}
 		}
 	}
 	a.s.d.Items = append(a.kept, a.out...)
@@ -100,7 +196,11 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 		if ref, ok := a.prev[f.Path]; ok {
 			m.ID, pt.ID = ref.media.ID, ref.part.ID
 			prevStreams = ref.part.Streams
-			changed = changed || ref.item.ID != it.ID
+			// Existing multipart versions retain their aggregate technical data.
+			if len(ref.media.Parts) > 1 {
+				m.Info = ref.media.Info
+			}
+			changed = changed || ref.item.ID != it.ID || ref.part.Unavailable
 		} else {
 			m.ID, pt.ID = next(&a.s.d.NextMediaID), next(&a.s.d.NextPartID)
 			changed = true
@@ -108,7 +208,11 @@ func (a *applier) leaf(it *Item, group []ScannedFile) bool {
 		pt.Streams = a.streams(f, prevStreams)
 		changed = changed || f.Changed
 		m.Parts = []Part{pt}
-		it.Media = append(it.Media, m)
+		if i := slices.IndexFunc(it.Media, func(v Media) bool { return v.ID == m.ID }); i >= 0 {
+			it.Media[i].Parts = append(it.Media[i].Parts, pt)
+		} else {
+			it.Media = append(it.Media, m)
+		}
 	}
 	if base != nil {
 		changed = changed || len(base.Media) != len(it.Media) || base.Title != it.Title ||
@@ -215,12 +319,18 @@ func (a *applier) shows(files []ScannedFile) {
 
 	type seasonKey struct{ show, index int }
 	oldShows := map[string]*Item{}
+	legacyShows := map[string]*Item{}
 	oldSeasons := map[seasonKey]*Item{}
 	oldKids := map[int]int{}
+	usedShows := map[int]bool{}
 	for _, it := range a.old {
 		switch it.Type {
 		case TypeShow:
-			oldShows[titleKey(it.Title, it.Year)] = it
+			if it.ScanKey != "" {
+				oldShows[it.ScanKey] = it
+			} else {
+				legacyShows[titleKey(it.Title, it.Year)] = it
+			}
 		case TypeSeason:
 			oldSeasons[seasonKey{it.ParentID, it.Index}] = it
 		}
@@ -232,9 +342,24 @@ func (a *applier) shows(files []ScannedFile) {
 	showKeys, shows := groupBy(files, func(f ScannedFile) string { return titleKey(f.Show, f.ShowYear) })
 	for _, sk := range showKeys {
 		sf := shows[sk]
-		show := &Item{SectionID: a.sec.ID, Type: TypeShow, Title: sf[0].Show, Year: sf[0].ShowYear}
+		base := oldShows[sk]
+		if base != nil && usedShows[base.ID] {
+			base = nil
+		}
+		if base == nil {
+			base = a.legacyShow(sf, usedShows)
+		}
+		if base == nil {
+			if old := legacyShows[sk]; old != nil && !usedShows[old.ID] {
+				base = old
+			}
+		}
+		if base != nil {
+			usedShows[base.ID] = true
+		}
+		show := &Item{SectionID: a.sec.ID, Type: TypeShow, Title: sf[0].Show, Year: sf[0].ShowYear, ScanKey: sk}
 		applyMeta(show, firstMeta(sf, showNFO))
-		showChanged := a.container(show, oldShows[sk])
+		showChanged := a.container(show, base)
 
 		seasonNums, seasons := groupBy(sf, func(f ScannedFile) int { return f.Season })
 		for _, n := range seasonNums {
@@ -273,4 +398,24 @@ func (a *applier) shows(files []ScannedFile) {
 			show.UpdatedAt = a.ts
 		}
 	}
+}
+
+// legacyShow links a pre-ScanKey show through the first known episode file.
+// Editable display titles cannot reliably identify those old containers.
+func (a *applier) legacyShow(files []ScannedFile, used map[int]bool) *Item {
+	for _, f := range files {
+		ref, ok := a.prev[f.Path]
+		if !ok || ref.item.Type != TypeEpisode {
+			continue
+		}
+		season := a.s.byID[ref.item.ParentID]
+		if season == nil || season.Type != TypeSeason {
+			continue
+		}
+		show := a.s.byID[season.ParentID]
+		if show != nil && show.Type == TypeShow && show.ScanKey == "" && !used[show.ID] {
+			return show
+		}
+	}
+	return nil
 }

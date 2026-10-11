@@ -91,6 +91,8 @@ type Store struct {
 	path string
 	mu   sync.Mutex
 	s    *Settings
+	// writeFile is an optional per-store writer; nil uses atomicfile.Write.
+	writeFile func(string, []byte, os.FileMode) error
 }
 
 // Open loads the settings at path, if the file exists.
@@ -124,7 +126,8 @@ func (st *Store) Get() (Settings, bool) {
 	return *st.s, true
 }
 
-// Set saves s.
+// Set saves s. An atomicfile.CommittedError still publishes the installed
+// settings while returning the error to report unconfirmed durability.
 func (st *Store) Set(s Settings) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
@@ -133,12 +136,18 @@ func (st *Store) Set(s Settings) error {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.path != "" {
-		if err := atomicfile.Write(st.path, append(b, '\n'), 0o600); err != nil {
+		writeFile := st.writeFile
+		if writeFile == nil {
+			writeFile = atomicfile.Write
+		}
+		err = writeFile(st.path, append(b, '\n'), 0o600)
+		var committed *atomicfile.CommittedError
+		if err != nil && !errors.As(err, &committed) {
 			return err
 		}
 	}
 	st.s = &s
-	return nil
+	return err
 }
 
 // Delete removes the settings.

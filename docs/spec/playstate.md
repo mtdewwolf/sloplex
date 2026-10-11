@@ -69,6 +69,10 @@ The `identifier` parameter is accepted and ignored.
 All of these endpoints accept both `GET` and `PUT`. On success they return
 `200` with an empty body.
 
+`/:/timeline` also accepts `POST`, the form in the official API reference.
+Its requirements and response differ; see
+[wire-conformance.md](wire-conformance.md).
+
 ## Endpoints
 
 ### `/:/scrobble`

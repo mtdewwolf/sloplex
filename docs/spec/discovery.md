@@ -92,4 +92,7 @@ already running see it appear and disappear at once.
   container with no multicast route, the server listens on plain UDP
   `0.0.0.0:32414` and logs a warning.
 - Discovery can be turned off with `"discovery": false` in the config. That
-  also turns off announcements.
+  also turns off announcements. A stored `GdmEnabled` preference overrides
+  the config at the next start; see [preferences.md](preferences.md).
+- `Name` is the server name in effect when each reply or announcement is
+  sent, so a `FriendlyName` change applies without a restart.

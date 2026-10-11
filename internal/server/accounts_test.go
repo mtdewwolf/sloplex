@@ -283,7 +283,7 @@ func TestCompatAccountsAndTrustedNetwork(t *testing.T) {
 	}
 
 	// A trusted network without a token is the owner; with a token it is
-	// that token's account; an invalid token falls back to the owner.
+	// that token's account; an invalid token is refused.
 	var me accountView
 	f.api(t, "GET", "/sloplex/account", "", nil, &me)
 	if me.ID != accounts.OwnerID {
@@ -293,8 +293,7 @@ func TestCompatAccountsAndTrustedNetwork(t *testing.T) {
 	if me.Name != "alice" {
 		t.Errorf("trusted, alice token = %+v", me)
 	}
-	f.api(t, "GET", "/sloplex/account", "garbage", nil, &me)
-	if me.ID != accounts.OwnerID {
-		t.Errorf("trusted, bad token = %+v", me)
+	if resp := f.api(t, "GET", "/sloplex/account", "garbage", nil, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("trusted, bad token = %s", resp.Status)
 	}
 }

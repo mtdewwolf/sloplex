@@ -255,27 +255,60 @@ func (s *Server) subtitleSource(r *http.Request, st library.Stream, part library
 	return path, subtitles.NativeFormat(st.Codec), err
 }
 
+// extFormats maps the extensions accepted by /library/streams/{id}.{ext}
+// to the format served when no format parameter is given.
+var extFormats = map[string]string{"srt": subtitles.SRT, "vtt": subtitles.VTT, "ass": subtitles.ASS, "ssa": subtitles.ASS}
+
+// streamPath parses the last segment of a stream URL: an ID, or for the
+// documented form an ID and extension. See docs/spec/wire-conformance.md.
+func streamPath(seg string) (id int, extFormat string, ok bool) {
+	idPart, ext, hasExt := strings.Cut(seg, ".")
+	if !hasExt {
+		id, err := strconv.Atoi(seg)
+		return id, "", err == nil
+	}
+	extFormat, ok = extFormats[strings.ToLower(ext)]
+	id, err := strconv.Atoi(idPart)
+	if !ok || err != nil || id < 0 || strconv.Itoa(id) != idPart {
+		return 0, "", false
+	}
+	return id, extFormat, true
+}
+
 func (s *Server) handleStreamFile(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
+	id, extFormat, ok := streamPath(r.PathValue("id"))
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	st, part, sectionID, err := s.store.Stream(id)
-	if err != nil || !s.visibility(r)(sectionID) {
+	if err != nil || !s.visibility(r)(sectionID) || !s.store.PartAvailable(part.ID) {
 		http.NotFound(w, r)
 		return
 	}
+	// The documented form reports streams it cannot serve as 501; the
+	// legacy form keeps 400.
+	unservable := http.StatusBadRequest
+	if extFormat != "" {
+		unservable = http.StatusNotImplemented
+	}
 	if st.Type != probe.StreamSubtitle {
-		http.Error(w, "not a subtitle stream", http.StatusBadRequest)
+		http.Error(w, "not a subtitle stream", unservable)
 		return
 	}
 	if !isTextSub(st) {
-		http.Error(w, "image-based subtitles can only be burned in", http.StatusBadRequest)
+		http.Error(w, "image-based subtitles can only be burned in", unservable)
 		return
 	}
 	q := r.URL.Query()
+	if extFormat != "" && (q.Get("encoding") != "" || q.Get("autoAdjustSubtitle") != "" && q.Get("autoAdjustSubtitle") != "0") {
+		http.Error(w, "subtitle encoding and automatic adjustment are not implemented", http.StatusNotImplemented)
+		return
+	}
 	format := q.Get("format")
+	if format == "" {
+		format = extFormat
+	}
 	if format != "" && !subtitles.ValidFormat(format) {
 		http.Error(w, "format must be srt, vtt or ass", http.StatusBadRequest)
 		return

@@ -80,7 +80,7 @@ func TestBurnTextSubtitles(t *testing.T) {
 	transcode := func(offset float64) string {
 		var buf bytes.Buffer
 		r := Request{Input: video, Source: src, Offset: offset, Burn: &Burn{File: srt}}
-		if err := m.Stream(context.Background(), 1, r, &buf, func(Plan) {}); err != nil {
+		if err := m.Stream(context.Background(), Owner{Account: 1}, 1, r, &buf, func(Plan) {}); err != nil {
 			t.Fatalf("offset %v: %v", offset, err)
 		}
 		out := filepath.Join(dir, "out.mp4")
@@ -130,7 +130,7 @@ func TestSelectedAudioIsUsed(t *testing.T) {
 	r := Request{Input: video, SelectAudio: true, AudioIndex: 2,
 		Source: probe.Info{VideoCodec: "h264", Width: 320, Height: 240, AudioCodec: "ac3", AudioChannels: 6}}
 	var plan Plan
-	if err := m.Stream(context.Background(), 1, r, &buf, func(p Plan) { plan = p }); err != nil {
+	if err := m.Stream(context.Background(), Owner{Account: 1}, 1, r, &buf, func(p Plan) { plan = p }); err != nil {
 		t.Fatal(err)
 	}
 	if !plan.CopyVideo || plan.CopyAudio {
