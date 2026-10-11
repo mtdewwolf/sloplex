@@ -63,7 +63,55 @@ def check_tailscale(compose, work, uid, gid):
     site = "${TS_CERT_DOMAIN}:443"
     assert serve["Web"][site]["Handlers"]["/"]["Proxy"] == "http://sloplex:32400"
     assert serve["TCP"]["443"]["HTTPS"] is True and serve["AllowFunnel"][site] is False
+    plain = serve["Web"]["${TS_CERT_DOMAIN}:80"]["Handlers"]["/"]
+    assert serve["TCP"]["80"]["HTTP"] is True and serve["AllowFunnel"].keys() == {site}
+    assert plain == {"Redirect": "https://${TS_CERT_DOMAIN}${REQUEST_URI}"}
     assert (work / "tailscale/tailscaled.state").exists()
+    assert (work / "tailscale").stat().st_mode & 0o777 == 0o700
+
+
+def check_guide_block(compose, work):
+    """The block to paste in docs/deploy-truenas.md is compose.tailscale.yaml with
+    example values for the user, key, hostname and dataset."""
+    guide = (ROOT / "docs/deploy-truenas.md").read_text()
+    block = guide.split("### Add Tailscale to the app", 1)[1].split("```yaml\n", 1)[1].split("```", 1)[0]
+    pasted = work / "guide.yaml"
+    pasted.write_text("services:\n  sloplex:\n    image: example\n" + block)
+    services = []
+    for args in (compose, ["docker", "compose", "-f", str(pasted)]):
+        service = json.loads(command(*args, "config", "--format", "json").stdout)["services"]["tailscale"]
+        service.pop("user")
+        service["volumes"][0].pop("source")
+        for key in ("TS_HOSTNAME", "TS_AUTHKEY"):
+            service["environment"].pop(key)
+        services.append(service)
+    assert services[0] == services[1], "the guide's Tailscale block differs from deploy/compose.tailscale.yaml"
+
+
+def check_tailscale_state_errors(compose, work, uid, gid):
+    """An unusable state folder stops the container with a message naming the fix."""
+    service = json.loads(command(*compose, "config", "--format", "json").stdout)["services"]["tailscale"]
+    shell, flag, script = service["entrypoint"]
+    script = script.replace("$$", "$")  # as Compose does when it runs the container
+    for name, mode, state in (("ts-read-only", 0o500, None), ("ts-locked-state", 0o700, 0o000)):
+        path = work / name
+        path.mkdir()
+        if state is not None:
+            (path / "tailscaled.state").touch()
+        if os.getuid() == 0:
+            os.chown(path, uid, gid)
+            if state is not None:
+                os.chown(path / "tailscaled.state", uid, gid)
+        if state is not None:
+            (path / "tailscaled.state").chmod(state)
+        path.chmod(mode)
+        result = command("docker", "run", "--rm", "--user", f"{uid}:{gid}", "--read-only",
+                         "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
+                         "-v", f"{path}:/var/lib/tailscale", "--entrypoint", shell,
+                         service["image"], flag, script, check=False)
+        assert result.returncode == 1, name
+        assert "Tailscale cannot use its state dataset" in result.stderr, name
+        assert f"Make user {uid} and group {gid} its owner" in result.stderr, name
 
 
 def main():
@@ -102,6 +150,8 @@ def main():
         if tailscale:
             compose += ["-f", str(ROOT / "deploy/compose.tailscale.yaml")]
         command(*compose, "config", "--quiet")
+        if tailscale:
+            check_guide_block(compose, work)
         try:
             command(*compose, "up", "-d")
             cid = command(*compose, "ps", "-q", "sloplex").stdout.strip()
@@ -132,6 +182,9 @@ def main():
             command("docker", "exec", cid, "ffprobe", "-v", "error", "/tmp/test.mp4")
             url = f"http://127.0.0.1:{port}"
             assert urllib.request.urlopen(url + "/web/", timeout=5).status == 200
+            # A browser opening the bare address lands on the web app.
+            browser = urllib.request.Request(url + "/", headers={"Accept": "text/html"})
+            assert urllib.request.urlopen(browser, timeout=5).geturl() == url + "/web/"
             try:
                 urllib.request.urlopen(url + "/library/sections", timeout=5)
                 raise AssertionError("library accepted unauthenticated access")
@@ -155,6 +208,7 @@ def main():
             assert urllib.request.urlopen(login, timeout=10).status == 200
             if tailscale:
                 check_tailscale(compose, work, uid, gid)
+                check_tailscale_state_errors(compose, work, uid, gid)
             command(*compose, "restart")
             for _ in range(60):
                 try:

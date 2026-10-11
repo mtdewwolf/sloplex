@@ -225,9 +225,13 @@ containers restart independently.
    the **DNS** page, turn on **MagicDNS** and, under **HTTPS Certificates**,
    **Enable HTTPS**.
 2. Create a dataset for Tailscale's state, such as
-   `/mnt/POOL/apps/sloplex-tailscale`. Give the same user as Sloplex's state
-   dataset read and write access. It holds the device's keys, so keep it
-   private and out of shared backups.
+   `/mnt/POOL/apps/sloplex-tailscale`. Make the user and group in Sloplex's
+   `user:` line its **owner**, with full access: in **Datasets**, select it,
+   then **Permissions → Edit**, set **Owner** and **Owner Group**, tick
+   **Apply Owner** and **Apply Group**, and save. Tailscale must own the
+   folder; access through a group or an ACL entry is not enough. The
+   dataset holds the device's keys, so keep it private and out of shared
+   backups.
 3. In the admin console, **Settings → Keys → Generate auth key**. Leave it
    **not reusable**, and turn on **Pre-approved** if your tailnet requires
    device approval. The key is spent at the first login. Without a key,
@@ -239,7 +243,7 @@ containers restart independently.
 In **Apps → sloplex → Edit**, add this block under `services:`, at the
 same indentation as `sloplex:`. Replace `3000:3000` with the user and
 group in Sloplex's `user:` line, the state path with your dataset, and the
-key with yours. Copy the rest exactly, including both `$$` signs:
+key with yours. Copy the rest exactly, including every `$$`:
 
 ```yaml
   tailscale:
@@ -251,7 +255,21 @@ key with yours. Copy the rest exactly, including both `$$` signs:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    entrypoint: ["/bin/sh", "-c", "printf '%s' \"$$SLOPLEX_SERVE\" > /tmp/serve.json && exec /usr/local/bin/containerboot"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        d=/var/lib/tailscale
+        s=$$d/tailscaled.state
+        if ! { [ -w "$$d" ] && [ -x "$$d" ] &&
+               { [ "$$(stat -c %a "$$d")" = 700 ] || chmod 700 "$$d"; } &&
+               { [ ! -e "$$s" ] || { [ -r "$$s" ] && [ -w "$$s" ]; }; }; } 2>/dev/null; then
+          echo "Tailscale cannot use its state dataset (mounted at $$d)." >&2
+          echo "Make user $$(id -u) and group $$(id -g) its owner, with full access, then restart the app." >&2
+          exit 1
+        fi
+        printf '%s' "$$SLOPLEX_SERVE" > /tmp/serve.json
+        exec /usr/local/bin/containerboot
     environment:
       TS_HOSTNAME: sloplex
       TS_AUTHKEY: "tskey-auth-REPLACE"
@@ -262,8 +280,9 @@ key with yours. Copy the rest exactly, including both `$$` signs:
       TS_ACCEPT_DNS: "false"
       TS_SERVE_CONFIG: /tmp/serve.json
       SLOPLEX_SERVE: >-
-        {"TCP":{"443":{"HTTPS":true}},
-        "Web":{"$${TS_CERT_DOMAIN}:443":{"Handlers":{"/":{"Proxy":"http://sloplex:32400"}}}},
+        {"TCP":{"80":{"HTTP":true},"443":{"HTTPS":true}},
+        "Web":{"$${TS_CERT_DOMAIN}:80":{"Handlers":{"/":{"Redirect":"https://$${TS_CERT_DOMAIN}$${REQUEST_URI}"}}},
+        "$${TS_CERT_DOMAIN}:443":{"Handlers":{"/":{"Proxy":"http://sloplex:32400"}}}},
         "AllowFunnel":{"$${TS_CERT_DOMAIN}:443":false}}
     volumes:
       - type: bind
@@ -285,10 +304,14 @@ key with yours. Copy the rest exactly, including both `$$` signs:
 Compose**. Fill the `SLOPLEX_TS_` values in your env file, then add
 `-f deploy/compose.tailscale.yaml` after `-f deploy/compose.yaml`.
 
+The block first checks that Tailscale can use its dataset, then starts
+Tailscale. Tailscale serves Sloplex over HTTPS and sends plain `http://`
+requests on to `https://`.
+
 **Save**. TrueNAS pulls the Tailscale image and starts it next to Sloplex.
 Within a minute, the device `sloplex` appears in the Tailscale admin
 console. The container's log, under **Workloads → tailscale → Logs**,
-shows any problem. After that:
+shows any problem; see **Troubleshooting** below. After that:
 
 - In the admin console, open the device's menu and choose **Disable key
   expiry**. Otherwise Tailscale asks for a new login after 180 days.
@@ -297,7 +320,24 @@ shows any problem. After that:
 - On a phone or laptop signed in to your tailnet, open
   `https://sloplex.<your-tailnet>.ts.net/web/`. The admin console's **DNS**
   page shows your tailnet's name. The very first visit can take a few
-  seconds while the certificate is issued.
+  seconds while the certificate is issued. Releases after 0.3.0 also send
+  a browser from the bare address to `/web/`.
+
+If you added Tailscale with an earlier version of this guide, replace your
+`tailscale:` block with the one above, keeping your own user, key and
+dataset path. Tailscale keeps its login, because that lives in the
+dataset.
+
+### Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| The log says **Tailscale cannot use its state dataset** and the container keeps restarting | Make the user and group it names the dataset's owner, as in **Before you start**, or in **System → Shell**: `sudo chown -R 3000:3000 /mnt/POOL/apps/sloplex-tailscale` with your numbers and path. The container retries by itself within a minute. |
+| An older block's log shows `store.New failed: … permission denied` and `tailscaled in state "NoState", waiting` over and over | The same ownership problem. Fix it as above, then replace the block. |
+| The log shows a login link, and the container restarts about every minute | The auth key is mistyped, expired or already used. Generate a new one and save, or open the link within the minute. |
+| `sloplex` is connected, but the browser can't reach it | Check that the phone or laptop has Tailscale on, and that **MagicDNS** and **HTTPS Certificates** are enabled on the admin console's **DNS** page. Addresses by Tailscale IP don't work; use the name. |
+| The name is `sloplex-1` | An old `sloplex` device already exists. Delete it in the admin console; the name is free for the next login. |
+| **401 Unauthorized** at the bare address | That is the address apps use. Add `/web/` to reach the web app. Releases after 0.3.0 send a browser there by themselves. |
 
 ### Keeping it private
 

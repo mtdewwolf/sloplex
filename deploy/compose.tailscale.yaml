@@ -15,7 +15,24 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    entrypoint: ["/bin/sh", "-c", "printf '%s' \"$$SLOPLEX_SERVE\" > /tmp/serve.json && exec /usr/local/bin/containerboot"]
+    # Tailscale needs to own its state folder. Without that it never logs in
+    # and only says "permission denied" in passing, so check first and say
+    # what to fix.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        d=/var/lib/tailscale
+        s=$$d/tailscaled.state
+        if ! { [ -w "$$d" ] && [ -x "$$d" ] &&
+               { [ "$$(stat -c %a "$$d")" = 700 ] || chmod 700 "$$d"; } &&
+               { [ ! -e "$$s" ] || { [ -r "$$s" ] && [ -w "$$s" ]; }; }; } 2>/dev/null; then
+          echo "Tailscale cannot use its state dataset (mounted at $$d)." >&2
+          echo "Make user $$(id -u) and group $$(id -g) its owner, with full access, then restart the app." >&2
+          exit 1
+        fi
+        printf '%s' "$$SLOPLEX_SERVE" > /tmp/serve.json
+        exec /usr/local/bin/containerboot
     environment:
       TS_HOSTNAME: "${SLOPLEX_TS_HOSTNAME:-sloplex}"
       # A one-off auth key for the first login. Without one, this
@@ -27,11 +44,13 @@ services:
       TS_SOCKET: /tmp/tailscaled.sock
       TS_ACCEPT_DNS: "false"
       TS_SERVE_CONFIG: /tmp/serve.json
-      # Tailscale fills in ${TS_CERT_DOMAIN}. Funnel, which would publish
-      # Sloplex on the internet, stays off.
+      # Tailscale fills in ${TS_CERT_DOMAIN} and ${REQUEST_URI}. Plain
+      # http:// is sent on to https://. Funnel, which would publish Sloplex
+      # on the internet, stays off.
       SLOPLEX_SERVE: >-
-        {"TCP":{"443":{"HTTPS":true}},
-        "Web":{"$${TS_CERT_DOMAIN}:443":{"Handlers":{"/":{"Proxy":"http://sloplex:32400"}}}},
+        {"TCP":{"80":{"HTTP":true},"443":{"HTTPS":true}},
+        "Web":{"$${TS_CERT_DOMAIN}:80":{"Handlers":{"/":{"Redirect":"https://$${TS_CERT_DOMAIN}$${REQUEST_URI}"}}},
+        "$${TS_CERT_DOMAIN}:443":{"Handlers":{"/":{"Proxy":"http://sloplex:32400"}}}},
         "AllowFunnel":{"$${TS_CERT_DOMAIN}:443":false}}
     volumes:
       - type: bind
