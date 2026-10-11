@@ -342,9 +342,19 @@ For each update:
    **Server**. Repeat the checks above.
 
 With an exact version tag there is no badge. Edit the app's YAML, change
-the image to the new version, and save. If no badge appears for a moving
-tag, do the same with the new release's exact version; you can switch
-back to the moving tag at the next update.
+the image to the new version, and save.
+
+If no badge appears for a moving tag, refresh it yourself:
+**Configuration → Manage Container Images → Pull Image**, with image
+`ghcr.io/mtdewwolf/sloplex` and the same tag, such as `latest`. Then
+**Edit** the app and **Save** without changes, so it is recreated from the
+fresh image.
+
+The NAS keeps its own copy of each tag, from the last time it pulled it.
+Starting or saving the app never checks the registry. So switching the
+YAML from an exact version back to `latest` without pulling brings back
+whichever release `latest` meant at that last pull, possibly an old one.
+Pull first, as above.
 
 New releases also carry Debian's latest ffmpeg and library fixes. Staying
 on an old version means missing those as well.
@@ -410,8 +420,9 @@ Stop the app, edit its YAML to the previous exact version, such as
 `ghcr.io/mtdewwolf/sloplex:0.1.0`, and start it. If the newer version
 changed stored data, restore the matching state snapshot while stopped,
 before starting the older image. Restoring a snapshot discards changes made
-after it; take a current one first. The app now stays on that version;
-switch back to `latest` when the problem is fixed.
+after it; take a current one first. The app now stays on that version.
+When the problem is fixed, pull `latest` as described in **Updates**
+before switching back to it.
 
 Never run two Sloplex instances against the same writable state. To
 abandon the trial, stop and remove only this app. Keep the datasets until
