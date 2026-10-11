@@ -43,7 +43,7 @@ func TestBurnPGSSubtitles(t *testing.T) {
 		var buf bytes.Buffer
 		r := Request{Input: video, Offset: offset, Burn: &Burn{Index: 1},
 			Source: probe.Info{VideoCodec: "h264", Width: 640, Height: 360}}
-		if err := m.Stream(context.Background(), 1, r, &buf, func(Plan) {}); err != nil {
+		if err := m.Stream(context.Background(), Owner{Account: 1}, 1, r, &buf, func(Plan) {}); err != nil {
 			t.Fatalf("offset %v: %v", offset, err)
 		}
 		out := filepath.Join(dir, "out.mp4")
@@ -104,7 +104,7 @@ func TestBurnPGSOnDownscaledHDR(t *testing.T) {
 	var buf bytes.Buffer
 	r := Request{Input: video, Burn: &Burn{Index: 1}, MaxWidth: 320, MaxHeight: 180,
 		Source: probe.Info{VideoCodec: "hevc", Width: 640, Height: 360, HDR: probe.HDRPQ}}
-	if err := m.Stream(context.Background(), 1, r, &buf, func(Plan) {}); err != nil {
+	if err := m.Stream(context.Background(), Owner{Account: 1}, 1, r, &buf, func(Plan) {}); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "out.mp4")

@@ -35,6 +35,11 @@ source.
 |----------------------------|------------------------------------------------------------|
 | [http-api.md](http-api.md) | Transport, content negotiation, MediaContainer, endpoints  |
 | [auth.md](auth.md)         | Local token authentication                                 |
+| [session-authorization.md](session-authorization.md) | Revocable HLS and progressive transcode authority |
+| [scan-safety.md](scan-safety.md) | Incomplete scan protection and probe retry behavior |
+| [trash.md](trash.md) | Retained unavailable media, same-path revival and explicit empty trash |
+| [library-identity.md](library-identity.md) | Stable configured-library IDs and legacy adoption |
+| [wire-conformance.md](wire-conformance.md) | Source-linked methods and paths for existing operations |
 | [accounts.md](accounts.md) | Accounts, passwords, tokens, permissions, management API   |
 | [discovery.md](discovery.md) | GDM LAN discovery                                        |
 | [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
@@ -47,6 +52,7 @@ source.
 | [collections.md](collections.md) | Collections: automatic from `.nfo` sets, and manual  |
 | [playlists.md](playlists.md) | Per-account playlists of movies and episodes           |
 | [updates.md](updates.md)   | Update check and one-click updates through TrueNAS         |
+| [preferences.md](preferences.md) | Server preferences registry and `/:/prefs`           |
 
 ## Conventions
 

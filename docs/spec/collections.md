@@ -93,7 +93,9 @@ also returns it when `{id}` is a collection.
 Returns the members, rendered as in lists. They are ordered by `year`, then
 `titleSort`, then ID, so a film series runs in release order.
 `GET /library/metadata/{id}/children` also works for a collection. Paging is
-supported.
+supported. `GET /library/collections/{id}/items`, the form in the official API
+reference, returns the same response; see
+[wire-conformance.md](wire-conformance.md).
 
 ### Changing collections (admins only)
 
@@ -110,6 +112,7 @@ Items are given in one of two ways:
 | `DELETE /library/collections/{id}/items/{itemId}` | Removes one member. `404` if it is not a member |
 | `PUT /library/collections/{id}?title=` | **(sloplex)** Renames the collection |
 | `DELETE /library/collections/{id}` | Deletes the collection. Its items are not touched |
+| `DELETE /library/sections/{sectionId}/collection/{id}` | The same, in the official API reference's form. `404` if the collection belongs to another section; see [wire-conformance.md](wire-conformance.md) |
 
 | Problem | Response |
 |---|---|

@@ -22,7 +22,7 @@ func TestThrottle(t *testing.T) {
 	defer m.Close()
 	m.setThrottleLimits(8*time.Second, 4*time.Second, 10*time.Millisecond)
 	ctx := context.Background()
-	s, err := m.StartHLS(1, "", 1, Request{Input: path, Source: clipInfo, MaxWidth: 160, MaxHeight: 90})
+	s, err := m.StartHLS(Owner{Account: 1}, "", 1, Request{Input: path, Source: clipInfo, MaxWidth: 160, MaxHeight: 90})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestNoThrottleByDefault(t *testing.T) {
 	m, _ := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc"), MaxTranscodes: 1})
 	defer m.Close()
 	m.setThrottleLimits(4*time.Second, 2*time.Second, 10*time.Millisecond)
-	s, err := m.StartHLS(1, "", 1, Request{Input: path, Source: clipInfo, MaxWidth: 160, MaxHeight: 90})
+	s, err := m.StartHLS(Owner{Account: 1}, "", 1, Request{Input: path, Source: clipInfo, MaxWidth: 160, MaxHeight: 90})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestPausedSessionLifecycle(t *testing.T) {
 			defer m.Close()
 			m.setThrottleLimits(4*time.Second, 2*time.Second, time.Millisecond)
 			r := Request{Input: path, Source: clipInfo, MaxWidth: 160, MaxHeight: 90}
-			s, err := m.StartHLS(1, "player", 1, r)
+			s, err := m.StartHLS(Owner{Account: 1}, "player", 1, r)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -123,7 +123,7 @@ func TestPausedSessionLifecycle(t *testing.T) {
 				case "close":
 					m.Close()
 				case "replace":
-					_, err = m.StartHLS(1, "player", 1, r)
+					_, err = m.StartHLS(Owner{Account: 1}, "player", 1, r)
 				case "idle":
 					m.SetIdleTimeout(time.Millisecond)
 					<-s.done

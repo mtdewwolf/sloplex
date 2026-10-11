@@ -18,12 +18,17 @@ import (
 // ErrScanInProgress is returned when a section is already being scanned.
 var ErrScanInProgress = errors.New("scan already in progress")
 
+// ErrScanIncomplete marks observations that must not replace a catalog.
+// See docs/spec/scan-safety.md for the conservative empty-root safeguard.
+var ErrScanIncomplete = errors.New("incomplete scan")
+
 // Scanner walks section paths and updates the store.
 type Scanner struct {
-	store  *Store
-	prober probe.Prober
-	log    *slog.Logger
-	now    func() time.Time
+	store   *Store
+	prober  probe.Prober
+	log     *slog.Logger
+	now     func() time.Time
+	walkDir func(string, fs.WalkDirFunc) error
 
 	mu      sync.Mutex
 	running map[int]bool
@@ -40,7 +45,7 @@ func NewScanner(store *Store, prober probe.Prober, log *slog.Logger) *Scanner {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Scanner{store: store, prober: prober, log: log, now: time.Now, running: map[int]bool{}, again: map[int]bool{}}
+	return &Scanner{store: store, prober: prober, log: log, now: time.Now, walkDir: filepath.WalkDir, running: map[int]bool{}, again: map[int]bool{}}
 }
 
 // Refreshing reports whether the section is being scanned.
@@ -83,8 +88,8 @@ func (sc *Scanner) Start(ctx context.Context, sectionID int) {
 // Wait blocks until all scans started with Start have returned.
 func (sc *Scanner) Wait() { sc.wg.Wait() }
 
-// Scan scans one section and replaces its contents. If any configured root
-// path cannot be read, the scan aborts and the section is left unchanged.
+// Scan reconciles a section, retaining missing media as unavailable.
+// Incomplete filesystem observations leave the section unchanged.
 func (sc *Scanner) Scan(ctx context.Context, sectionID int) (ScanStats, error) {
 	sc.mu.Lock()
 	if sc.running[sectionID] {
@@ -114,9 +119,12 @@ func (sc *Scanner) scan(ctx context.Context, sectionID int) (ScanStats, error) {
 	for _, root := range sec.Paths {
 		found, err := sc.walk(ctx, sec, root)
 		if err != nil {
-			return ScanStats{}, err
+			return ScanStats{}, fmt.Errorf("%w: %w", ErrScanIncomplete, err)
 		}
 		files = append(files, found...)
+	}
+	if err := ctx.Err(); err != nil {
+		return ScanStats{}, fmt.Errorf("%w: %w", ErrScanIncomplete, err)
 	}
 
 	stats, err := sc.store.ApplyScan(sec.ID, files, sc.now())
@@ -128,7 +136,7 @@ func (sc *Scanner) scan(ctx context.Context, sectionID int) (ScanStats, error) {
 	}
 	sc.log.Info("scan finished", "section", sec.ID, "title", sec.Title,
 		"files", stats.Files, "added", stats.Added, "updated", stats.Updated,
-		"removed", stats.Removed, "took", time.Since(start).Round(time.Millisecond))
+		"removed", stats.Removed, "unavailable", stats.Unavailable, "took", time.Since(start).Round(time.Millisecond))
 	return stats, nil
 }
 
@@ -144,19 +152,12 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 	var files []ScannedFile
 	dirs := dirCache{}
 	shows := map[string]*Meta{} // tvshow.nfo by directory
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err = sc.walkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
 		}
 		if err != nil {
-			if path == root {
-				return err
-			}
-			sc.log.Warn("skipping unreadable path", "path", path, "err", err)
-			if d != nil && d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
+			return fmt.Errorf("walk %s: %w", path, err)
 		}
 		if d.IsDir() {
 			if path != root && skipDir(d.Name()) {
@@ -170,10 +171,16 @@ func (sc *Scanner) walk(ctx context.Context, sec Section, root string) ([]Scanne
 		}
 		info, err := d.Info()
 		if err != nil {
-			sc.log.Warn("skipping file", "path", path, "err", err)
-			return nil
+			return fmt.Errorf("stat %s: %w", path, err)
 		}
-		if f, ok := sc.scanFile(ctx, sec, root, path, info); ok {
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("media file %s is no longer regular", path)
+		}
+		f, ok, err := sc.scanFile(ctx, sec, root, path, info)
+		if err != nil {
+			return err
+		}
+		if ok {
 			f.Sidecars = findSidecars(dirs, path)
 			f.NFO, f.ShowNFO = sc.nfos(dirs, shows, sec, root, f)
 			files = append(files, f)
@@ -231,7 +238,7 @@ func (sc *Scanner) nfos(dirs dirCache, shows map[string]*Meta, sec Section, root
 
 // scanFile names and probes one video file. ok is false if the file does not
 // fit the section's naming rules.
-func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string, fi fs.FileInfo) (f ScannedFile, ok bool) {
+func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string, fi fs.FileInfo) (f ScannedFile, ok bool, err error) {
 	f = ScannedFile{Path: path, Size: fi.Size(), ModTime: fi.ModTime().Unix()}
 	switch sec.Type {
 	case TypeMovie:
@@ -240,30 +247,47 @@ func (sc *Scanner) scanFile(ctx context.Context, sec Section, root, path string,
 		ep, ok := ParseEpisode(root, path)
 		if !ok {
 			sc.log.Debug("skipping file without episode number", "path", path)
-			return ScannedFile{}, false
+			return ScannedFile{}, false, nil
 		}
 		f.Show, f.ShowYear, f.Season, f.Episode, f.Title, f.Aired = ep.Show, ep.ShowYear, ep.Season, ep.Episode, ep.Title, ep.Aired
 	default:
-		return ScannedFile{}, false
+		return ScannedFile{}, false, nil
 	}
 
-	if size, mod, info, known := sc.store.KnownFile(sec.ID, path); known && size == f.Size && mod == f.ModTime {
+	size, mod, previous, known := sc.store.KnownFile(sec.ID, path)
+	if known && size == f.Size && mod == f.ModTime {
 		// Files probed by an older version are probed again once, unless
 		// there is no real prober to do it.
 		_, noProber := sc.prober.(probe.None)
-		if info.ProbeVersion >= probe.Version || noProber {
-			f.Info = info
-			return f, true
+		if previous.ProbeVersion >= probe.Version || noProber {
+			f.Info = previous
+			return f, true, nil
 		}
 	}
 	f.Changed = true
 	info, err := sc.prober.Probe(ctx, path)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ScannedFile{}, false, ctxErr
+	}
 	if err != nil {
 		sc.log.Warn("probe failed", "path", path, "err", err)
+		current, statErr := os.Stat(path)
+		if statErr != nil {
+			return ScannedFile{}, false, fmt.Errorf("stat after probe %s: %w", path, statErr)
+		}
+		if !current.Mode().IsRegular() || current.Size() != fi.Size() || !current.ModTime().Equal(fi.ModTime()) {
+			return ScannedFile{}, false, fmt.Errorf("media file %s changed during failed probe", path)
+		}
+		info = probe.Info{}
+		if known {
+			info = previous
+		}
+		// Preserve usable known metadata, but retry this probe next time.
+		info.ProbeVersion = 0
 	}
 	if info.Container == "" {
 		info.Container = probe.ContainerForPath(path)
 	}
 	f.Info = info
-	return f, true
+	return f, true, nil
 }

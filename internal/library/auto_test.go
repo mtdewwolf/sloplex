@@ -76,6 +76,25 @@ func TestAutoWatch(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(root, "Heat (1995)")); err != nil {
 		t.Fatal(err)
 	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		missing := false
+		for _, it := range s.Items(sec, TypeMovie) {
+			if it.Title == "Heat" && it.Unavailable {
+				missing = true
+			}
+		}
+		if missing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("watch did not mark Heat unavailable")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := s.EmptyTrash(sec, time.Now()); err != nil {
+		t.Fatal(err)
+	}
 	waitTitles(t, s, sec, "Alien", 3*time.Second)
 }
 

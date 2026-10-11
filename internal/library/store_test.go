@@ -46,19 +46,21 @@ func TestApplyScanKeepsIDs(t *testing.T) {
 		before[it.Title] = it
 	}
 
-	// Rescan: Beta unchanged, Alpha gone, Gamma new.
+	// Apply an explicitly authoritative list: Beta unchanged, Alpha gone,
+	// Gamma new. Filesystem scans must establish completeness before calling
+	// ApplyScan; see scan-safety.md.
 	b := file("/m/b.mkv", "Beta", 2001)
 	b.Changed = false
 	stats, err = s.ApplyScan(sec, []ScannedFile{b, file("/m/c.mkv", "Gamma", 2002)}, t0.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Added != 1 || stats.Removed != 1 || stats.Updated != 0 {
-		t.Fatalf("stats = %+v, want 1 added, 1 removed, 0 updated", stats)
+	if stats.Added != 1 || stats.Removed != 0 || stats.Unavailable != 1 || stats.Updated != 0 {
+		t.Fatalf("stats = %+v, want 1 added, 1 unavailable, 0 updated", stats)
 	}
 	items := s.Items(sec)
-	if len(items) != 2 {
-		t.Fatalf("got %d items, want 2", len(items))
+	if len(items) != 3 {
+		t.Fatalf("got %d items, want 3 including trash", len(items))
 	}
 	for _, it := range items {
 		if it.Title != "Beta" {
@@ -71,6 +73,12 @@ func TestApplyScanKeepsIDs(t *testing.T) {
 		if it.UpdatedAt != old.UpdatedAt || it.AddedAt != old.AddedAt {
 			t.Errorf("Beta timestamps changed for unchanged file")
 		}
+	}
+	if alpha, err := s.Item(before["Alpha"].ID); err != nil || !alpha.Unavailable {
+		t.Fatalf("Alpha not retained unavailable: %+v, %v", alpha, err)
+	}
+	if _, err := s.EmptyTrash(sec, t0.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := s.Item(before["Alpha"].ID); err != ErrNotFound {
 		t.Errorf("Alpha still present: %v", err)
@@ -237,8 +245,8 @@ func TestApplyScanShows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Added != 0 || stats.Removed != 1 || stats.Updated != 1 {
-		t.Errorf("rescan stats = %+v, want 0 added, 1 removed, 1 updated", stats)
+	if stats.Added != 0 || stats.Removed != 0 || stats.Unavailable != 1 || stats.Updated != 1 {
+		t.Errorf("rescan stats = %+v, want 0 added, 1 unavailable, 1 updated", stats)
 	}
 	for key, id := range map[string]int{"show/0/Lost": ids["show/0/Lost"], "season/1/Season 1": ids["season/1/Season 1"],
 		"season/2/Season 2": ids["season/2/Season 2"], "episode/1/Pilot Part 1": ids["episode/1/Pilot Part 1"]} {

@@ -9,12 +9,16 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 )
 
 // Library describes one library section to serve.
 type Library struct {
+	// ID is an optional stable, case-sensitive configuration identity.
+	// Add it before renaming a legacy library; see library-identity.md.
+	ID    string   `json:"id,omitempty"`
 	Title string   `json:"title"`
 	Type  string   `json:"type"`
 	Paths []string `json:"paths"`
@@ -31,8 +35,8 @@ type Config struct {
 	Tokens []string `json:"tokens"`
 	// AllowedNetworks are CIDRs whose clients skip token authentication.
 	AllowedNetworks []string `json:"allowedNetworks"`
-	// StrictTokenAuth rejects invalid supplied tokens instead of falling back
-	// to owner access on trusted networks. Tokenless trusted access is unchanged.
+	// StrictTokenAuth is an obsolete compatibility key. Invalid supplied
+	// tokens are always refused, regardless of its value.
 	StrictTokenAuth bool `json:"strictTokenAuth"`
 	// FFprobe is the ffprobe binary: "" looks it up on PATH, "-" disables probing.
 	FFprobe string `json:"ffprobe"`
@@ -68,6 +72,8 @@ type Config struct {
 
 // SupportedTypes lists the library types the server can scan.
 var SupportedTypes = map[string]bool{"movie": true, "show": true}
+
+var libraryIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // Default returns the configuration used when no file is given.
 func Default() Config {
@@ -151,7 +157,9 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("x264Preset %q: want auto, ultrafast, superfast, veryfast, faster, fast or medium", c.X264Preset)
 	}
-	seen := map[string]bool{}
+	seenIDs := map[string]bool{}
+	seenNames := map[string]bool{}
+	legacyNames := map[string]bool{}
 	for i, lib := range c.Libraries {
 		if lib.Title == "" {
 			return fmt.Errorf("libraries[%d]: title must not be empty", i)
@@ -162,11 +170,21 @@ func (c Config) Validate() error {
 		if len(lib.Paths) == 0 {
 			return fmt.Errorf("libraries[%d] %q: no paths", i, lib.Title)
 		}
+		if lib.ID != "" {
+			if !libraryIDPattern.MatchString(lib.ID) {
+				return fmt.Errorf("libraries[%d]: invalid id %q: want 1-64 ASCII letters/digits with . _ or - after the first character", i, lib.ID)
+			}
+			if seenIDs[lib.ID] {
+				return fmt.Errorf("libraries[%d]: duplicate library id %q", i, lib.ID)
+			}
+			seenIDs[lib.ID] = true
+		}
 		key := lib.Type + "\x00" + lib.Title
-		if seen[key] {
+		if seenNames[key] && (lib.ID == "" || legacyNames[key]) {
 			return fmt.Errorf("libraries[%d]: duplicate %s library %q", i, lib.Type, lib.Title)
 		}
-		seen[key] = true
+		seenNames[key] = true
+		legacyNames[key] = legacyNames[key] || lib.ID == ""
 	}
 	return nil
 }

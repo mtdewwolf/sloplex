@@ -26,6 +26,7 @@ import (
 	"github.com/mtdewwolf/sloplex/internal/library"
 	"github.com/mtdewwolf/sloplex/internal/playlists"
 	"github.com/mtdewwolf/sloplex/internal/playstate"
+	"github.com/mtdewwolf/sloplex/internal/preferences"
 	"github.com/mtdewwolf/sloplex/internal/probe"
 	"github.com/mtdewwolf/sloplex/internal/server"
 	"github.com/mtdewwolf/sloplex/internal/subtitles"
@@ -47,19 +48,20 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	level := slog.LevelInfo
+	// The logDebug preference may change the level while running.
+	level := new(slog.LevelVar)
 	if *debug {
-		level = slog.LevelDebug
+		level.Set(slog.LevelDebug)
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
-	if err := run(*configPath, log); err != nil {
+	if err := run(*configPath, *debug, level, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string, log *slog.Logger) error {
+func run(configPath string, debug bool, level *slog.LevelVar, log *slog.Logger) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
@@ -76,13 +78,23 @@ func run(configPath string, log *slog.Logger) error {
 			"token", id.Token, "file", filepath.Join(cfg.DataDir, "identity.json"))
 	}
 
+	interval, _ := cfg.ScanEvery() // checked by Validate
+	// Stored preferences override these config values; see
+	// docs/spec/preferences.md.
+	prefs, err := preferences.Open(filepath.Join(cfg.DataDir, "preferences.json"), preferences.Bootstrap{
+		FriendlyName: cfg.FriendlyName, ScanInterval: interval, Watch: cfg.Watch, Discovery: cfg.Discovery, Debug: debug,
+	})
+	if err != nil {
+		return err
+	}
+
 	store, err := library.Open(filepath.Join(cfg.DataDir, "library.json"))
 	if err != nil {
 		return err
 	}
 	defs := make([]library.SectionDef, len(cfg.Libraries))
 	for i, l := range cfg.Libraries {
-		defs[i] = library.SectionDef{Title: l.Title, Type: l.Type, Paths: l.Paths}
+		defs[i] = library.SectionDef{ConfigID: l.ID, Title: l.Title, Type: l.Type, Paths: l.Paths}
 	}
 	if err := store.SyncSections(defs, time.Now()); err != nil {
 		return err
@@ -126,6 +138,7 @@ func run(configPath string, log *slog.Logger) error {
 	art := artwork.New(filepath.Join(cfg.DataDir, "cache"), ffmpeg)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go preferences.FollowLogLevel(ctx, prefs, level)
 
 	var hw transcode.HW
 	if ffmpeg != "" {
@@ -150,28 +163,43 @@ func run(configPath string, log *slog.Logger) error {
 	for _, sec := range store.Sections() {
 		scanner.Start(ctx, sec.ID)
 	}
-	interval, _ := cfg.ScanEvery() // checked by Validate
-	scanner.Auto(ctx, library.AutoOptions{Watch: cfg.Watch, Interval: interval})
+	// Interval scans follow the preferences at runtime; watching is set up
+	// once.
+	scanner.Auto(ctx, library.AutoOptions{Watch: prefs.Watch()})
+	scheduleDone := make(chan struct{})
+	go func() {
+		defer close(scheduleDone)
+		preferences.RunScanSchedule(ctx, prefs, func() {
+			for _, sec := range store.Sections() {
+				scanner.Start(ctx, sec.ID)
+			}
+		})
+	}()
+	// Runs before scanner.Wait, so no scan starts while it waits.
+	defer func() { stop(); <-scheduleDone }()
 	checker := updates.New(version, cfg.UpdateURL, log)
 	if cfg.UpdateCheck {
 		go checker.Run(ctx, time.Minute, 24*time.Hour)
 	}
 
+	if cfg.StrictTokenAuth {
+		// See "Strict token mode" in docs/spec/auth.md.
+		log.Info("strictTokenAuth is obsolete: invalid tokens are always refused; remove it from the config")
+	}
 	srv := server.New(ctx, server.Options{
 		FriendlyName:    cfg.FriendlyName,
 		MachineID:       id.MachineID,
 		Version:         version,
 		Tokens:          append([]string{id.Token}, cfg.Tokens...),
 		AllowedNetworks: networks,
-		StrictTokenAuth: cfg.StrictTokenAuth,
 		AutoUpdateCheck: cfg.UpdateCheck,
 	}, server.Deps{Store: store, Scanner: scanner, Play: play, Playlists: lists, Art: art, Accounts: accts, Transcoder: tc,
-		Updates: checker, TrueNAS: nas,
+		Updates: checker, TrueNAS: nas, Prefs: prefs,
 		Subtitles: subtitles.New(ffmpeg, filepath.Join(cfg.DataDir, "cache", "subs")), Log: log})
 
 	started := time.Now().Unix()
 	announced := make(chan struct{})
-	if !cfg.Discovery {
+	if !prefs.Discovery() {
 		close(announced)
 	} else {
 		conn, err := gdm.Listen(log)
@@ -179,10 +207,7 @@ func run(configPath string, log *slog.Logger) error {
 			log.Warn("gdm: discovery disabled", "err", err)
 			close(announced)
 		} else {
-			info := func() gdm.Announcement {
-				return gdm.Announcement{MachineID: id.MachineID, Name: cfg.FriendlyName,
-					Version: version, Port: port, UpdatedAt: started}
-			}
+			info := gdmInfo(prefs, id.MachineID, port, started)
 			go func() {
 				if err := gdm.Serve(ctx, conn, info, log); err != nil {
 					log.Error("gdm stopped", "err", err)
@@ -203,7 +228,7 @@ func run(configPath string, log *slog.Logger) error {
 	}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("listening", "addr", cfg.Listen, "name", cfg.FriendlyName, "machineIdentifier", id.MachineID)
+		log.Info("listening", "addr", cfg.Listen, "name", prefs.FriendlyName(), "machineIdentifier", id.MachineID)
 		errc <- httpSrv.ListenAndServe()
 	}()
 
@@ -221,4 +246,13 @@ func run(configPath string, log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// gdmInfo describes the server for GDM, with the name in effect at each
+// call.
+func gdmInfo(prefs *preferences.Store, machineID string, port int, started int64) func() gdm.Announcement {
+	return func() gdm.Announcement {
+		return gdm.Announcement{MachineID: machineID, Name: prefs.FriendlyName(),
+			Version: version, Port: port, UpdatedAt: started}
+	}
 }

@@ -179,12 +179,17 @@ func TestManualCollections(t *testing.T) {
 	}
 	MaxCollectionItems = old
 
-	// Members that leave the library are dropped at the next scan; the
-	// collection survives, and so does everything across a reload.
+	// A deliberate file deletion retains membership until an explicit purge.
 	if err := os.Remove(filepath.Join(movies, "Ronin (1998).mkv")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := sc.Scan(context.Background(), moviesSec); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Collection(c.ID); err != nil || !slices.Contains(got.ItemIDs, ids["Ronin"]) {
+		t.Fatalf("trash lost membership: %+v, %v", got, err)
+	}
+	if _, err := s.EmptyTrash(moviesSec, later); err != nil {
 		t.Fatal(err)
 	}
 	reloaded, err := Open(path)

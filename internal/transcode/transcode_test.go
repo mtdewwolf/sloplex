@@ -89,7 +89,7 @@ func TestHLSSession(t *testing.T) {
 	defer m.Close()
 	ctx := context.Background()
 
-	s, err := m.StartHLS(1, "player-1", 42, Request{Input: path, Source: clipInfo, MaxWidth: 320, MaxHeight: 180})
+	s, err := m.StartHLS(Owner{Account: 1}, "player-1", 42, Request{Input: path, Source: clipInfo, MaxWidth: 320, MaxHeight: 180})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestHLSSession(t *testing.T) {
 		t.Errorf("plan = %+v", s.Plan)
 	}
 	// Only one slot: a second session is refused.
-	if _, err := m.StartHLS(2, "other", 43, Request{Input: path, Source: clipInfo}); !errors.Is(err, ErrBusy) {
+	if _, err := m.StartHLS(Owner{Account: 2}, "other", 43, Request{Input: path, Source: clipInfo}); !errors.Is(err, ErrBusy) {
 		t.Errorf("second session = %v, want ErrBusy", err)
 	}
 
@@ -136,7 +136,7 @@ func TestHLSSession(t *testing.T) {
 	}
 
 	// Restarting with the same label replaces the session (seeking).
-	s2, err := m.StartHLS(1, "player-1", 42, Request{Input: path, Source: clipInfo, Offset: 5})
+	s2, err := m.StartHLS(Owner{Account: 1}, "player-1", 42, Request{Input: path, Source: clipInfo, Offset: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestIdleReaper(t *testing.T) {
 	}
 	defer m.Close()
 	m.SetIdleTimeout(500 * time.Millisecond)
-	s, err := m.StartHLS(1, "x", 1, Request{Input: path, Source: clipInfo})
+	s, err := m.StartHLS(Owner{Account: 1}, "x", 1, Request{Input: path, Source: clipInfo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestStreamMP4(t *testing.T) {
 	defer m.Close()
 	var buf bytes.Buffer
 	var plan Plan
-	if err := m.Stream(context.Background(), 7, Request{Input: path, Source: clipInfo}, &buf, func(p Plan) { plan = p }); err != nil {
+	if err := m.Stream(context.Background(), Owner{Account: 1}, 7, Request{Input: path, Source: clipInfo}, &buf, func(p Plan) { plan = p }); err != nil {
 		t.Fatal(err)
 	}
 	if buf.Len() < 1000 || !bytes.Equal(buf.Bytes()[4:8], []byte("ftyp")) {
@@ -204,7 +204,7 @@ func TestStreamMP4(t *testing.T) {
 	}
 
 	// A broken input reports ffmpeg's error.
-	err = m.Stream(context.Background(), 7, Request{Input: filepath.Join(t.TempDir(), "missing.mkv")}, &buf, func(Plan) {})
+	err = m.Stream(context.Background(), Owner{Account: 1}, 7, Request{Input: filepath.Join(t.TempDir(), "missing.mkv")}, &buf, func(Plan) {})
 	if err == nil || !strings.Contains(err.Error(), "ffmpeg") {
 		t.Errorf("missing input = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestStreamMP4(t *testing.T) {
 	// Without ffmpeg everything is unavailable.
 	none, _ := New(Options{Dir: filepath.Join(t.TempDir(), "tc2"), MaxTranscodes: 1})
 	defer none.Close()
-	if _, err := none.StartHLS(1, "", 1, Request{}); !errors.Is(err, ErrUnavailable) {
+	if _, err := none.StartHLS(Owner{Account: 1}, "", 1, Request{}); !errors.Is(err, ErrUnavailable) {
 		t.Errorf("no ffmpeg = %v", err)
 	}
 }
@@ -221,7 +221,7 @@ func TestFirstPTS(t *testing.T) {
 	ffmpeg, path := clip(t, "6")
 	m, _ := New(Options{FFmpeg: ffmpeg, Dir: filepath.Join(t.TempDir(), "tc"), MaxTranscodes: 1})
 	defer m.Close()
-	s, err := m.StartHLS(1, "", 1, Request{Input: path, Source: clipInfo, Offset: 1.5})
+	s, err := m.StartHLS(Owner{Account: 1}, "", 1, Request{Input: path, Source: clipInfo, Offset: 1.5})
 	if err != nil {
 		t.Fatal(err)
 	}

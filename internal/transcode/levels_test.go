@@ -168,7 +168,7 @@ func TestHLSLevels(t *testing.T) {
 	defer m.Close()
 	r := Request{Input: src, ABR: ABROn,
 		Source: probe.Info{VideoCodec: "mpeg4", Width: 1920, Height: 1080, AudioCodec: "mp2", AudioChannels: 1, Duration: 9000}}
-	s, err := m.StartHLS(1, "abr", 1, r)
+	s, err := m.StartHLS(Owner{Account: 1}, "abr", 1, r)
 	if err != nil {
 		t.Fatal(err)
 	}

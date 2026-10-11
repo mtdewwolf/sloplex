@@ -17,6 +17,8 @@
   - which files win when several apply;
   - how ratings are scaled;
   - the handling of broken files.
+  - preservation of scanner identity independently from editable display
+    metadata, including recovery of older local stores from episode paths.
 
 Sloplex never fetches metadata from the internet. Everything below comes
 from files next to the media.
@@ -133,3 +135,25 @@ have `role`. **(sloplex)** `Role` is emitted only by
   [http-api.md](http-api.md)), saving the file triggers that scan.
 - A changed `.nfo` updates the item's `updatedAt`, like a changed video.
 - Search also matches the original title.
+
+### Hierarchy identity **(sloplex)**
+
+- A show's scanner identity is the case-insensitive title and year parsed
+  from its media organization, before applying `tvshow.nfo`. It is kept in
+  the local store separately from the displayed title and year. This is
+  internal state, not a new HTTP metadata attribute or a claimed Plex GUID.
+- Unchanged scans and edits/removal of `.nfo` display fields MUST preserve
+  the show ID, its existing season IDs, path-matched episode/media/part IDs,
+  creation timestamps and manual collection references. Display changes
+  update the appropriate modification timestamps.
+- For older stores without scanner identity, a scan first recovers the
+  prior show through a known episode file and its season/show parents. A
+  parsed-title/year lookup is used only when a legacy show cannot be linked
+  through such a file. The recovered identity is persisted on that scan.
+- One prior show cannot supply its ID to two new show groups. In an
+  ambiguous split, scanner-key matching takes precedence; path-based legacy
+  recovery chooses the first available show in the group's sorted files.
+- This does not provide permanent external identity, file-move matching,
+  library-rename migration or restoration of references already removed by
+  an earlier destructive scan. See [scan-safety.md](scan-safety.md) for scan
+  application safeguards.

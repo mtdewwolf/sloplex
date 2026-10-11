@@ -143,6 +143,9 @@ access.
 
 - Text that is not valid UTF-8 is read as Windows-1252.
 - An image subtitle returns `400`, and so does an unknown `format`.
+- `GET /library/streams/{id}.{ext}`, the form in the official API
+  reference, serves the same subtitles. Its extension and status rules are
+  in [wire-conformance.md](wire-conformance.md).
 - **(sloplex)** Extracted and converted subtitles are cached under
   `<dataDir>/cache/subs/`. The cache key includes the part's modification
   time.

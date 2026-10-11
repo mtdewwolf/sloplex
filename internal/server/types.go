@@ -115,14 +115,15 @@ type Location struct {
 	Path string `xml:"path,attr" json:"path"`
 }
 
-// Metadata is a playable item. Its XML element name is set per type.
+// Metadata is a catalog item, including retained unavailable items. Its XML element name is set per type.
 type Metadata struct {
 	XMLName xml.Name `json:"-"`
 
-	RatingKey string `xml:"ratingKey,attr" json:"ratingKey"`
-	Key       string `xml:"key,attr" json:"key"`
-	GUID      string `xml:"guid,attr" json:"guid"`
-	Type      string `xml:"type,attr" json:"type"`
+	SloplexUnavailable Bool   `xml:"sloplexUnavailable,attr,omitempty" json:"sloplexUnavailable,omitempty"`
+	RatingKey          string `xml:"ratingKey,attr" json:"ratingKey"`
+	Key                string `xml:"key,attr" json:"key"`
+	GUID               string `xml:"guid,attr" json:"guid"`
+	Type               string `xml:"type,attr" json:"type"`
 	// PlaylistType and Smart describe playlists; PlaylistItemID marks an
 	// item's entry in one.
 	PlaylistType   string `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
@@ -213,16 +214,17 @@ func xmlName(itemType string) xml.Name {
 
 // Media is one version of an item.
 type Media struct {
-	ID              int    `xml:"id,attr" json:"id"`
-	Duration        int64  `xml:"duration,attr,omitempty" json:"duration,omitempty"`
-	Bitrate         int    `xml:"bitrate,attr,omitempty" json:"bitrate,omitempty"`
-	Width           int    `xml:"width,attr,omitempty" json:"width,omitempty"`
-	Height          int    `xml:"height,attr,omitempty" json:"height,omitempty"`
-	AudioChannels   int    `xml:"audioChannels,attr,omitempty" json:"audioChannels,omitempty"`
-	AudioCodec      string `xml:"audioCodec,attr,omitempty" json:"audioCodec,omitempty"`
-	VideoCodec      string `xml:"videoCodec,attr,omitempty" json:"videoCodec,omitempty"`
-	VideoResolution string `xml:"videoResolution,attr,omitempty" json:"videoResolution,omitempty"`
-	Container       string `xml:"container,attr,omitempty" json:"container,omitempty"`
+	SloplexUnavailable Bool   `xml:"sloplexUnavailable,attr,omitempty" json:"sloplexUnavailable,omitempty"`
+	ID                 int    `xml:"id,attr" json:"id"`
+	Duration           int64  `xml:"duration,attr,omitempty" json:"duration,omitempty"`
+	Bitrate            int    `xml:"bitrate,attr,omitempty" json:"bitrate,omitempty"`
+	Width              int    `xml:"width,attr,omitempty" json:"width,omitempty"`
+	Height             int    `xml:"height,attr,omitempty" json:"height,omitempty"`
+	AudioChannels      int    `xml:"audioChannels,attr,omitempty" json:"audioChannels,omitempty"`
+	AudioCodec         string `xml:"audioCodec,attr,omitempty" json:"audioCodec,omitempty"`
+	VideoCodec         string `xml:"videoCodec,attr,omitempty" json:"videoCodec,omitempty"`
+	VideoResolution    string `xml:"videoResolution,attr,omitempty" json:"videoResolution,omitempty"`
+	Container          string `xml:"container,attr,omitempty" json:"container,omitempty"`
 	// Selected and Protocol are set by the decision endpoint.
 	Selected Bool   `xml:"selected,attr,omitempty" json:"selected,omitempty"`
 	Protocol string `xml:"protocol,attr,omitempty" json:"protocol,omitempty"`
@@ -231,12 +233,13 @@ type Media struct {
 
 // Part is one file of a Media.
 type Part struct {
-	ID        int    `xml:"id,attr" json:"id"`
-	Key       string `xml:"key,attr" json:"key"`
-	Duration  int64  `xml:"duration,attr,omitempty" json:"duration,omitempty"`
-	File      string `xml:"file,attr" json:"file"`
-	Size      int64  `xml:"size,attr" json:"size"`
-	Container string `xml:"container,attr,omitempty" json:"container,omitempty"`
+	SloplexUnavailable Bool   `xml:"sloplexUnavailable,attr,omitempty" json:"sloplexUnavailable,omitempty"`
+	ID                 int    `xml:"id,attr" json:"id"`
+	Key                string `xml:"key,attr" json:"key"`
+	Duration           int64  `xml:"duration,attr,omitempty" json:"duration,omitempty"`
+	File               string `xml:"file,attr" json:"file"`
+	Size               int64  `xml:"size,attr" json:"size"`
+	Container          string `xml:"container,attr,omitempty" json:"container,omitempty"`
 	// Decision is set by the decision endpoint.
 	Decision string `xml:"decision,attr,omitempty" json:"decision,omitempty"`
 	// Stream is only included in item detail; see docs/spec/streams.md.

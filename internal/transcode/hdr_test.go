@@ -96,7 +96,7 @@ func TestToneMapping(t *testing.T) {
 			t.Fatalf("%s: probe HDR = %q, %v", tc.name, info.HDR, err)
 		}
 		var buf bytes.Buffer
-		if err := m.Stream(context.Background(), 1, Request{Input: src, Source: info, MaxWidth: tc.maxW}, &buf, func(Plan) {}); err != nil {
+		if err := m.Stream(context.Background(), Owner{Account: 1}, 1, Request{Input: src, Source: info, MaxWidth: tc.maxW}, &buf, func(Plan) {}); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 		out := filepath.Join(dir, tc.name+".mp4")

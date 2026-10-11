@@ -14,6 +14,9 @@
 - The `inotify` interface used for watching comes from the Linux man pages
   (`inotify(7)`).
 - Items marked **(sloplex)** are our own choices.
+- Pagination input normalization and overflow-safe bounds below are
+  **(sloplex)** defensive behavior, verified by `TestPaginationLargeSize`
+  and `FuzzPageBounds`; they are not an observed Plex numeric-limit contract.
 
 ## Transport
 
@@ -52,6 +55,13 @@ headers:
 |--------------------------|---------------------------------|
 | `X-Plex-Container-Start` | Zero-based offset (default 0)   |
 | `X-Plex-Container-Size`  | Maximum items (default: all)    |
+
+**(sloplex)** Query values take precedence over headers when nonempty.
+Negative, malformed, or out-of-range integer values use the endpoint's
+default. An offset past the available items produces an empty page; a size
+larger than the remaining items returns only the remaining items. These
+bounds MUST hold even when an accepted integer is the platform maximum;
+offset plus size MUST NOT overflow. A size of zero selects no items.
 
 A paged response sets these on the container:
 
@@ -184,7 +194,9 @@ Returns a `MediaContainer` with `size="0"`, `machineIdentifier`, and
 
 ### `GET /`
 
-Returns the server root. The container carries `friendlyName`,
+Returns the server root. The container carries `friendlyName` (the
+`FriendlyName` preference, or config `friendlyName` while it is blank; see
+[preferences.md](preferences.md)),
 `machineIdentifier`, `version`, `platform`, `platformVersion`, and
 `updatedAt`. Its children are Directories with key `library`.
 
@@ -234,12 +246,16 @@ show section. Supports paging and sorting.
 Returns the section's leaf items (movies or episodes) ordered by `addedAt`,
 newest first. Supports paging. The default size is 50 **(sloplex)**.
 
-### `GET|PUT /library/sections/{id}/refresh`
+### `GET|PUT|POST /library/sections/{id}/refresh`
 
 Starts an asynchronous rescan of the section and returns `200` with an empty
 body. **Admins only**; other accounts get `403`; see
 [accounts.md](accounts.md).
 
+- The documented POST form validates `force` and rejects unsupported
+  forced/path-limited scans with `501`; legacy methods retain their old
+  behavior. See [wire conformance](wire-conformance.md) for source, errors
+  and remaining cancellation support.
 - **(sloplex)** If a scan of that section is already running, one more scan
   is queued to run after it, so changes made during the running scan are
   not missed. See **When scans run**.
@@ -302,9 +318,12 @@ Streams the original file bytes ("direct play").
   unchanged file paths.
 - Files are probed with `ffprobe` when they are new, or when their size or
   modification time has changed.
-- If a configured root path is missing or unreadable, the scan aborts and the
-  section's existing items stay as they are. This keeps an unmounted drive
-  from wiping the library.
+- Missing/unreadable roots, nested traversal/stat errors and cancellation
+  abort without replacing the catalog. Fully traversed empty/partial roots
+  mark absent files unavailable, retaining their IDs and references until
+  explicit admin empty trash. See [scan safety](scan-safety.md) and
+  [retained unavailable media and trash](trash.md) for the public behavioral
+  sources, original design, playback protections and limits.
 
 ### When scans run
 
@@ -314,7 +333,9 @@ A section is scanned:
 - on `GET|PUT /library/sections/{id}/refresh`;
 - when its folders change, if watching is on (see **Watching**);
 - every `scanInterval` (config; default `1h`). `0` turns interval scans off.
-  This is the backup for changes that watching cannot see.
+  This is the backup for changes that watching cannot see. The
+  `ScheduledLibraryUpdatesEnabled` and `ScheduledLibraryUpdateInterval`
+  preferences override it at runtime; see [preferences.md](preferences.md).
 
 **Queueing.** A scan requested while the same section is being scanned runs
 once more when the current scan finishes. Requests made during that wait
@@ -322,7 +343,9 @@ are merged into that one extra scan.
 
 ### Watching
 
-With `watch` set (config; default `true`), the server watches every
+With `watch` set (config; default `true`; the
+`FSEventLibraryUpdatesEnabled` preference overrides it at the next start),
+the server watches every
 directory under each section's paths, except the directories the scanner
 skips.
 

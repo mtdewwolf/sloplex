@@ -490,7 +490,9 @@ session/<sid>/base/index.m3u8
 These serve the media playlist and its segments.
 
 - **(sloplex)** These URLs need **no token**. Knowing the unguessable `sid`
-  is the authorisation, so players that drop query strings can still play.
+  grants playback only while the starting account, token and item access
+  remain valid; see [session authorization](session-authorization.md).
+  Players that drop query strings can still play without repeated tokens.
 - An unknown `sid` returns `404`.
 - Segment names are five digits (`00000.ts`). Any other name returns `404`.
 

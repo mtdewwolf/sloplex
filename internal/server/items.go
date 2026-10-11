@@ -182,7 +182,8 @@ func pageBounds(r *http.Request, total, defaultSize int) (start, end int, paged 
 	start = min(start, total)
 	end = total
 	if size >= 0 {
-		end = min(start+size, total)
+		// Clamp before addition: a client-supplied size can be MaxInt.
+		end = start + min(size, total-start)
 	}
 	return start, end, paged
 }
@@ -282,6 +283,7 @@ func (s *Server) metadata(it library.Item, acct int) Metadata {
 	rk := strconv.Itoa(it.ID)
 	md := Metadata{
 		XMLName:               xmlName(it.Type),
+		SloplexUnavailable:    Bool(it.Unavailable),
 		RatingKey:             rk,
 		Key:                   metadataKey(it.ID),
 		GUID:                  fmt.Sprintf("sloplex://%s/%s", it.Type, rk),
@@ -351,18 +353,20 @@ func (s *Server) metadata(it library.Item, acct int) Metadata {
 
 	for _, m := range it.Media {
 		media := Media{
-			ID: m.ID, Duration: m.Duration, Bitrate: m.Bitrate, Width: m.Width, Height: m.Height,
+			SloplexUnavailable: Bool(!m.Available()),
+			ID:                 m.ID, Duration: m.Duration, Bitrate: m.Bitrate, Width: m.Width, Height: m.Height,
 			AudioChannels: m.AudioChannels, AudioCodec: m.AudioCodec, VideoCodec: m.VideoCodec,
 			VideoResolution: videoResolution(m.Width, m.Height), Container: m.Container,
 		}
 		for _, p := range m.Parts {
 			media.Part = append(media.Part, Part{
-				ID:        p.ID,
-				Key:       fmt.Sprintf("/library/parts/%d/%d/file%s", p.ID, p.ModTime, strings.ToLower(filepath.Ext(p.File))),
-				Duration:  p.Duration,
-				File:      p.File,
-				Size:      p.Size,
-				Container: p.Container,
+				SloplexUnavailable: Bool(p.Unavailable),
+				ID:                 p.ID,
+				Key:                fmt.Sprintf("/library/parts/%d/%d/file%s", p.ID, p.ModTime, strings.ToLower(filepath.Ext(p.File))),
+				Duration:           p.Duration,
+				File:               p.File,
+				Size:               p.Size,
+				Container:          p.Container,
 			})
 		}
 		md.Media = append(md.Media, media)

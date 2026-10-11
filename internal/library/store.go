@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -36,8 +38,11 @@ func IsLeaf(itemType string) bool {
 
 // Section is one library section, such as "Movies".
 type Section struct {
-	ID        int      `json:"id"`
-	UUID      string   `json:"uuid"`
+	ID   int    `json:"id"`
+	UUID string `json:"uuid"`
+	// ConfigID is the optional owner-selected configuration identity. It is
+	// separate from the numeric API ID and UUID, and survives display edits.
+	ConfigID  string   `json:"configId,omitempty"`
 	Title     string   `json:"title"`
 	Type      string   `json:"type"`
 	Paths     []string `json:"paths"`
@@ -59,6 +64,10 @@ type Item struct {
 	Index int    `json:"index,omitempty"`
 	Title string `json:"title"`
 	Year  int    `json:"year,omitempty"`
+	// ScanKey is a show's parsed title/year identity before NFO overrides.
+	// Older stores recover it from known episode paths on their next scan.
+	// It is local scanner state, not an HTTP metadata attribute.
+	ScanKey string `json:"scanKey,omitempty"`
 	// Aired is an episode's air date (YYYY-MM-DD), when known.
 	Aired     string  `json:"aired,omitempty"`
 	AddedAt   int64   `json:"addedAt"`
@@ -69,6 +78,8 @@ type Item struct {
 	Images map[string]Image `json:"images,omitempty"`
 	// Meta is metadata from a local .nfo file, if any.
 	Meta *Meta `json:"meta,omitempty"`
+	// Unavailable is derived from retained parts/descendants; see trash.md.
+	Unavailable bool `json:"unavailable,omitempty"`
 }
 
 // SortKey is the lower-case key items are sorted by: the .nfo sort title,
@@ -102,12 +113,13 @@ type Media struct {
 
 // Part is one file of a Media.
 type Part struct {
-	ID        int    `json:"id"`
-	File      string `json:"file"`
-	Size      int64  `json:"size"`
-	ModTime   int64  `json:"modTime"`
-	Duration  int64  `json:"duration,omitempty"`
-	Container string `json:"container,omitempty"`
+	ID          int    `json:"id"`
+	Unavailable bool   `json:"unavailable,omitempty"`
+	File        string `json:"file"`
+	Size        int64  `json:"size"`
+	ModTime     int64  `json:"modTime"`
+	Duration    int64  `json:"duration,omitempty"`
+	Container   string `json:"container,omitempty"`
 	// Streams are the file's embedded streams followed by its sidecar
 	// subtitles; see docs/spec/streams.md.
 	Streams []Stream `json:"streams,omitempty"`
@@ -123,9 +135,10 @@ type Stream struct {
 
 // SectionDef is the configured shape of a section.
 type SectionDef struct {
-	Title string
-	Type  string
-	Paths []string
+	ConfigID string
+	Title    string
+	Type     string
+	Paths    []string
 }
 
 // ScannedFile is one media file found by a scan.
@@ -154,11 +167,16 @@ type ScannedFile struct {
 
 // ScanStats summarises the effect of a scan on leaf items.
 type ScanStats struct {
-	Files, Added, Updated, Removed int
+	Files, Added, Updated, Removed, Unavailable int
 }
 
 // ErrNotFound is returned for unknown sections, items and parts.
 var ErrNotFound = errors.New("not found")
+
+// ErrInvalidSections marks an invalid or ambiguous configuration sync.
+var ErrInvalidSections = errors.New("invalid section configuration")
+
+var sectionConfigIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 const storeVersion = 1
 
@@ -187,6 +205,8 @@ type Store struct {
 	mu   sync.RWMutex
 	path string
 	d    storeData
+	// writeFile is an optional per-store writer; nil uses atomicfile.Write.
+	writeFile func(string, []byte, os.FileMode) error
 
 	// Indexes, rebuilt by reindexLocked after every change.
 	byID     map[int]*Item
@@ -268,40 +288,166 @@ func next(counter *int) int {
 	return *counter
 }
 
-// SyncSections makes the stored sections match defs, matched by title and
-// type. Existing sections keep their IDs; sections not in defs are removed
-// together with their items.
+// SyncSections matches explicit configuration identities, with unambiguous
+// exact title/type matching for legacy definitions. Omitted sections and
+// their catalog/collections are removed. Invalid syncs leave state unchanged;
+// see docs/spec/library-identity.md for staged adoption and rejection rules.
 func (s *Store) SyncSections(defs []SectionDef, now time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	byKey := map[string]*Section{}
-	for _, sec := range s.d.Sections {
-		byKey[sec.Type+"\x00"+sec.Title] = sec
+	if err := validateSectionDefs(defs); err != nil {
+		return err
 	}
-	ts := now.Unix()
-	var out []*Section
+	byConfigID := map[string]*Section{}
+	byKey := map[string][]*Section{}
+	for _, sec := range s.d.Sections {
+		if sec.ConfigID != "" {
+			if !sectionConfigIDPattern.MatchString(sec.ConfigID) || byConfigID[sec.ConfigID] != nil {
+				return fmt.Errorf("%w: invalid or duplicate stored identity %q", ErrInvalidSections, sec.ConfigID)
+			}
+			byConfigID[sec.ConfigID] = sec
+		}
+		key := sec.Type + "\x00" + sec.Title
+		byKey[key] = append(byKey[key], sec)
+	}
+	matched := make([]*Section, len(defs))
 	keep := map[int]bool{}
-	for _, def := range defs {
-		sec := byKey[def.Type+"\x00"+def.Title]
-		if sec == nil {
-			sec = &Section{
-				ID: next(&s.d.NextSectionID), UUID: newUUID(),
-				Title: def.Title, Type: def.Type, CreatedAt: ts, UpdatedAt: ts,
+	unresolved := map[string]int{}
+	// Resolve explicit IDs first; migration decisions cannot depend on order.
+	for i, def := range defs {
+		if def.ConfigID != "" {
+			if sec := byConfigID[def.ConfigID]; sec != nil {
+				if sec.Type != def.Type {
+					return fmt.Errorf("%w: identity %q cannot change type from %q to %q", ErrInvalidSections, def.ConfigID, sec.Type, def.Type)
+				}
+				if keep[sec.ID] {
+					return fmt.Errorf("%w: duplicate stored numeric section ID %d", ErrInvalidSections, sec.ID)
+				}
+				matched[i], keep[sec.ID] = sec, true
+				continue
 			}
 		}
-		if !slices.Equal(sec.Paths, def.Paths) {
-			sec.Paths = slices.Clone(def.Paths)
-			sec.UpdatedAt = ts
+		unresolved[def.Type+"\x00"+def.Title]++
+	}
+	for i, def := range defs {
+		if matched[i] != nil {
+			continue
+		}
+		key := def.Type + "\x00" + def.Title
+		var candidates []*Section
+		for _, sec := range byKey[key] {
+			if def.ConfigID == "" || sec.ConfigID == "" {
+				candidates = append(candidates, sec)
+			}
+		}
+		if len(candidates) > 1 || len(candidates) != 0 && unresolved[key] > 1 {
+			return fmt.Errorf("%w: ambiguous legacy match for %s library %q; use stored identities or adopt an ID before editing", ErrInvalidSections, def.Type, def.Title)
+		}
+		if len(candidates) == 1 {
+			sec := candidates[0]
+			if keep[sec.ID] {
+				return fmt.Errorf("%w: section %q is referenced by more than one definition", ErrInvalidSections, sec.Title)
+			}
+			matched[i], keep[sec.ID] = sec, true
+		}
+	}
+	for i, def := range defs {
+		if matched[i] != nil {
+			continue
+		}
+		for _, old := range s.d.Sections {
+			if keep[old.ID] {
+				continue
+			}
+			if old.Title == def.Title && old.Type != def.Type {
+				return fmt.Errorf("%w: ambiguous type change for %q; remove the old library separately", ErrInvalidSections, def.Title)
+			}
+			if old.Type != def.Type {
+				continue
+			}
+			if def.ConfigID != "" && old.ConfigID == "" {
+				return fmt.Errorf("%w: cannot infer adoption of omitted legacy library %q; add its ID before changing its title", ErrInvalidSections, old.Title)
+			}
+			if old.Title == def.Title || sharedSectionRoot(old.Paths, def.Paths) {
+				return fmt.Errorf("%w: possible rename or identity replacement of %q; retain its ID or adopt one before editing", ErrInvalidSections, old.Title)
+			}
+		}
+	}
+
+	ts := now.Unix()
+	out := make([]*Section, 0, len(defs))
+	nextID := s.d.NextSectionID
+	for i, def := range defs {
+		var sec *Section
+		if old := matched[i]; old != nil {
+			copy := old.clone()
+			sec = &copy
+		} else {
+			sec = &Section{ID: next(&nextID), UUID: newUUID(), Type: def.Type, CreatedAt: ts, UpdatedAt: ts}
+		}
+		if def.ConfigID != "" {
+			sec.ConfigID = def.ConfigID
+		}
+		if sec.Title != def.Title || !slices.Equal(sec.Paths, def.Paths) {
+			sec.Title, sec.Paths, sec.UpdatedAt = def.Title, slices.Clone(def.Paths), ts
 		}
 		keep[sec.ID] = true
 		out = append(out, sec)
 	}
+	previous := s.d
+	s.d.NextSectionID = nextID
 	s.d.Sections = out
-	s.d.Items = slices.DeleteFunc(s.d.Items, func(it *Item) bool { return !keep[it.SectionID] })
-	s.d.Collections = slices.DeleteFunc(s.d.Collections, func(c *Collection) bool { return !keep[c.SectionID] })
+	s.d.Items = slices.DeleteFunc(slices.Clone(s.d.Items), func(it *Item) bool { return !keep[it.SectionID] })
+	s.d.Collections = slices.DeleteFunc(slices.Clone(s.d.Collections), func(c *Collection) bool { return !keep[c.SectionID] })
 	s.reindexLocked()
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		var committed *atomicfile.CommittedError
+		if !errors.As(err, &committed) {
+			s.d = previous
+			s.reindexLocked()
+		}
+		return err
+	}
+	return nil
+}
+
+func validateSectionDefs(defs []SectionDef) error {
+	ids, names, legacy := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, def := range defs {
+		if def.Title == "" || def.Type != TypeMovie && def.Type != TypeShow || len(def.Paths) == 0 {
+			return fmt.Errorf("%w: each library needs a title, supported type and paths", ErrInvalidSections)
+		}
+		if def.ConfigID != "" {
+			if !sectionConfigIDPattern.MatchString(def.ConfigID) || ids[def.ConfigID] {
+				return fmt.Errorf("%w: invalid or duplicate identity %q", ErrInvalidSections, def.ConfigID)
+			}
+			ids[def.ConfigID] = true
+		}
+		key := def.Type + "\x00" + def.Title
+		if names[key] && (def.ConfigID == "" || legacy[key]) {
+			return fmt.Errorf("%w: duplicate legacy %s library %q", ErrInvalidSections, def.Type, def.Title)
+		}
+		names[key], legacy[key] = true, legacy[key] || def.ConfigID == ""
+	}
+	return nil
+}
+
+// sharedSectionRoot only rejects uncertain replacements; it never matches ID.
+func sharedSectionRoot(a, b []string) bool {
+	for _, x := range a {
+		x, err := filepath.Abs(x)
+		if err != nil {
+			continue
+		}
+		for _, y := range b {
+			y, err := filepath.Abs(y)
+			if err == nil && x == y {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Sections returns all sections in configuration order.
@@ -449,30 +595,39 @@ func (s *Store) Stream(id int) (Stream, Part, int, error) {
 }
 
 // SetImages replaces the artwork of every item in a section. Items missing
-// from images lose their artwork.
+// from images lose their artwork unless unavailable media is retained.
 func (s *Store) SetImages(sectionID int, images map[int]map[string]Image) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, it := range s.d.Items {
 		if it.SectionID == sectionID {
-			it.Images = maps.Clone(images[it.ID])
+			if it.Unavailable || slices.ContainsFunc(it.Media, func(m Media) bool { return !m.Available() }) {
+				if it.Images == nil && len(images[it.ID]) > 0 {
+					it.Images = map[string]Image{}
+				}
+				maps.Copy(it.Images, images[it.ID])
+			} else {
+				it.Images = maps.Clone(images[it.ID])
+			}
 		}
 	}
 	return s.saveLocked()
 }
 
-// ApplyScan replaces the contents of a section with the scanned files,
+// ApplyScan reconciles a section with scanned files, retaining absent media,
 // keeping item, media and part IDs for what was already known. See the
-// scanning rules in docs/spec/http-api.md.
+// scanning rules in docs/spec/http-api.md and docs/spec/scan-safety.md.
+// The caller must provide an authoritative list, never a partial failed scan.
 func (s *Store) ApplyScan(sectionID int, files []ScannedFile, now time.Time) (ScanStats, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	sec := s.sectionLocked(sectionID)
+	stage := s.stagedLocked()
+	sec := stage.sectionLocked(sectionID)
 	if sec == nil {
 		return ScanStats{}, ErrNotFound
 	}
-	a := newApplier(s, sec, now)
+	a := newApplier(stage, sec, now)
 	switch sec.Type {
 	case TypeMovie:
 		a.movies(files)
@@ -483,9 +638,12 @@ func (s *Store) ApplyScan(sectionID int, files []ScannedFile, now time.Time) (Sc
 	}
 	a.finish()
 	sec.ScannedAt = now.Unix()
-	s.reindexLocked()
-	s.syncCollectionsLocked(sec, now.Unix())
-	return a.stats, s.saveLocked()
+	stage.reindexLocked()
+	stage.syncCollectionsLocked(sec, now.Unix())
+	if err := s.publishLocked(stage); err != nil {
+		return ScanStats{}, err
+	}
+	return a.stats, nil
 }
 
 func (s *Store) saveLocked() error {
@@ -496,7 +654,11 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return atomicfile.Write(s.path, b, 0o644)
+	writeFile := s.writeFile
+	if writeFile == nil {
+		writeFile = atomicfile.Write
+	}
+	return writeFile(s.path, b, 0o644)
 }
 
 func (sec *Section) clone() Section {
