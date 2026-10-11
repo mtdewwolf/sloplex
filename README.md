@@ -269,6 +269,7 @@ playback speed. Reproduce it with `python3 test/bench/tonemap.py`; see
 | `discovery`       | `true`         | Answer GDM searches on UDP 32414                          |
 | `tokens`          | `[]`           | Extra owner master tokens                                 |
 | `allowedNetworks` | `[]`           | CIDRs that may skip tokens; tokenless requests act as the owner |
+| `strictTokenAuth` | `false`        | Reject an invalid or revoked token with `401` even from `allowedNetworks`, instead of falling back to the owner |
 | `ffprobe`         | `""`           | ffprobe path; `""` searches `PATH`, `"-"` disables probing |
 | `ffmpeg`          | `""`           | ffmpeg path for transcoding and episode thumbnails; `""` searches `PATH`, `"-"` disables |
 | `maxTranscodes`   | `2`            | Concurrent transcodes (HLS sessions plus MP4 streams)     |
