@@ -7,3 +7,8 @@ node_modules/
 /deploy/.env
 /deploy/compose.rendered.yaml
 __pycache__/
+
+# Local research inputs and design sources kept out of the repository.
+/plexmediaserver-*.rpm
+/branding/
+/marketing/
