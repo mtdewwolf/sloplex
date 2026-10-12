@@ -173,7 +173,8 @@ function viewLogin() {
   el("label", {}, "Password", pass),
   err,
   el("button", { class: "primary", type: "submit", text: "Sign in" }));
-  render(el("div", { class: "card-panel login" }, el("h1", { text: "Sloplex" }), form));
+  render(el("div", { class: "card-panel login" },
+    el("h1", { class: "login-brand" }, el("img", { src: "brand/logo-dark.svg", alt: "Sloplex", width: 213, height: 64 })), form));
 }
 
 // ---- Library views ---------------------------------------------------------
