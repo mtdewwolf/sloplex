@@ -33,6 +33,8 @@ existing contracts; see [updates.md](updates.md).
 | [wire-conformance.md](wire-conformance.md) | Source-linked methods and paths for existing operations |
 | [accounts.md](accounts.md) | Accounts, passwords, tokens, permissions, management API   |
 | [discovery.md](discovery.md) | GDM LAN discovery                                        |
+| [providers.md](providers.md) | Local media-provider capabilities and section discovery |
+| [home-hubs.md](home-hubs.md) | Home/section hubs, resume items and detail routes |
 | [playstate.md](playstate.md) | Watched/resume state, scrobbling, On Deck                |
 | [artwork.md](artwork.md)   | Posters, backgrounds, frame grabs, image resizing          |
 | [search.md](search.md)     | Search, hubs, matching and ranking                         |
