@@ -9,7 +9,9 @@ baseline code locations and acceptance criteria.
 ## Scope
 
 The current implementation work targets locally implementable server
-behavior under the existing clean-room and standalone-service policy.
+behavior under the current source-provenance and standalone-service policy.
+The owner authorized REA analysis of the supplied Plex Linux release on
+2026-10-12; static findings remain distinct from live-server/client evidence.
 No target PMS binary build or official-client matrix has been established.
 Cloud registration, Plex account behavior and entitlements remain explicitly
 unverified and are not represented by local equivalents as compatible.

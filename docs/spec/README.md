@@ -1,33 +1,24 @@
 # Sloplex protocol specification
 
-This folder is the **clean-room boundary** of the project. It describes the
-externally observable behaviour Sloplex implements: HTTP endpoints, response
-shapes, headers, and the LAN discovery protocol. Implementation code in
-`internal/` and `cmd/` is written **from these documents**, not from any other
-source.
+This folder describes Sloplex's implemented behavior: HTTP endpoints,
+response shapes, headers and LAN discovery. Keep the contract, implementation
+and regression tests consistent.
 
-## Rules
+## Sources
 
-1. **Allowed sources** for spec content:
-   - publicly available, freely published documentation of the media-server
-     HTTP API and GDM discovery protocol (community wikis, open-source *client*
-     libraries' docs, blog posts);
-   - black-box observation of network traffic between software you lawfully
-     own and run, e.g. packet captures or HTTP logs;
-   - our own design decisions. Sloplex is its own product and may deviate.
-2. **Forbidden sources**, for both spec and code:
-   - decompiled, disassembled, or otherwise reverse-engineered binaries;
-   - leaked or proprietary source code;
-   - copying text, schemas, or code from projects whose licence does not
-     allow it.
-3. Every spec page has a **Provenance** section that says where its facts came
-   from. When you add a fact, add its source.
-4. Any change to wire behaviour updates the spec in the same pull request.
-   Reviewers check that the code matches the spec, not the other way round.
-5. Sloplex does **not** talk to plex.tv. Identity, accounts, and tokens are
-   local to the server. The only outbound connections are the update check
-   to GitHub, which can be turned off, and the owner's own TrueNAS server
-   when they set one up; see [updates.md](updates.md).
+The owner authorized REA analysis of the supplied Plex Linux release on
+2026-10-12, replacing the previous clean-room source restriction. Specifications
+may use public documentation, lawful runtime observations, static findings
+from supplied artifacts, and original design. Every page must record provenance;
+static analysis and inferred behavior must not be presented as runtime proof.
+Artifact-based research records its digest, version, source location and REA
+Evidence ID. Implementation code is original; leaked source and copied
+proprietary implementation code are excluded. Historical review records retain
+the policy that applied when they were written.
+
+Sloplex does not talk to plex.tv. Identity, accounts and tokens remain local.
+The optional GitHub update check and configured TrueNAS integration keep their
+existing contracts; see [updates.md](updates.md).
 
 ## Pages
 

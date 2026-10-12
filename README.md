@@ -1,8 +1,7 @@
 # Sloplex
 
 Sloplex is a self-hosted media server whose HTTP API and LAN discovery
-follow the Plex Media Server protocol. It is a clean-room implementation in
-Go.
+follow the Plex Media Server protocol. It is an independent implementation in Go.
 
 Sloplex is a standalone product:
 
@@ -320,7 +319,7 @@ internal/lang/      language code normalisation
 internal/server/    HTTP API (MediaContainer XML/JSON)
 internal/gdm/       LAN discovery responder
 internal/preferences/ server preferences registry and stored values
-docs/spec/          the clean-room protocol specification
+docs/spec/          the protocol specification and evidence
 ```
 
 ## Development
@@ -331,7 +330,7 @@ go test -race ./...
 ```
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before you contribute. The
-clean-room rules there are mandatory.
+source provenance and implementation rules apply.
 
 Browser end-to-end suites for the web app live in `test/e2e/`. They need
 Node and Playwright; see [test/e2e/README.md](test/e2e/README.md).
