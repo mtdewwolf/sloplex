@@ -1,0 +1,65 @@
+{
+  "format": "sloplex-artifact-research/1",
+  "recorded": "2026-10-12",
+  "target": "PMS 1.43.4.10903 / shipped Plex Web 4.160.0",
+  "scope": "Queue occurrence reporting on playback timelines",
+  "static": {
+    "rea_version": "6.4.0",
+    "operation": "analyze_javascript_application",
+    "evidence_id": "ev_8d39bf9540a4851bde24674ef65bae00eb9a05ebc28798fea71129100e4eb33a",
+    "evidence_sha256": "7d36dbdf75bd778f6ab267ec7c4fb4cb8250ab75bf32d1752e6af509b821bad2",
+    "module": {
+      "module_key": "63224",
+      "factory_require_name": "r",
+      "source_sha256": "4946035ce977e453e34144d0e89a731560782df895a4bdfd7b2aad1bf336f926",
+      "exports": [],
+      "location": {
+        "start": {
+          "line": 2,
+          "column": 381125
+        },
+        "end": {
+          "line": 2,
+          "column": 398410
+        }
+      },
+      "structural_fingerprint_sha256": "fdc7dd7bd59368ab7eb0684d6ca7f983a08fd77cbf3d4d0d50b0ec573f1f5b87",
+      "structural_fingerprint_algorithm": "babel-ast-v1"
+    },
+    "source_sha256": "8be776dd488577eaf6d3e650d803dfead60375578c1dd92849001ec1139c8063",
+    "factory_sha256_verified": true,
+    "graph_coverage": {
+      "status": "complete",
+      "truncated": false,
+      "omitted_count": 0,
+      "limits": []
+    },
+    "observation": "The timeline request builder includes playQueueItemID alongside ratingKey, key, state and playback time, without a playQueueID parameter. This is static syntax, not an observed request."
+  },
+  "runtime_bootstrap": {
+    "evidence_id": "ev_3c71e527d4532bbf3383fd4dcaf2da6d4c3cf37e8886ab052fd928bfb9319218",
+    "evidence_sha256": "b27284499ccfa272c52a07ad9a923d5559c48fcf2ac2f6a105c2ebf9d3cca9b1",
+    "scenario": "pms-offline-scenario.json",
+    "result": "PMS started and answered root/library/preferences endpoints; the private environment has only a loopback interface. This initial capture did not test queues.",
+    "private_support_directory": "/home/developer/.local/share/rea/targets/plex-offline-runtime",
+    "settings_count": 151,
+    "synthetic_data_only": true,
+    "queue_probe_status": "Queue lifecycle probe succeeded; see plex-1.43.4-queue-runtime.json. Expanded window and insertion matrix in progress."
+  },
+  "implementation_contract": {
+    "queue_selection": "Resolve playQueueItemID only in the caller-owned active queues; optional playQueueID further narrows the lookup. Match the metadata ID before saving playstate. Publish selection only after playstate reports success.",
+    "version": "Timeline selection and repeated progress reports do not increment queue version, matching controlled PMS 1.43.4 runtime observation.",
+    "provenance": "Shipped-client request construction plus controlled PMS HTTP observation; owner isolation and save-error atomicity are Sloplex design."
+  },
+  "checks": {
+    "targeted_race": "passed",
+    "vet": "passed",
+    "full_race": "passed"
+  },
+  "raw_evidence_directory": "/home/developer/.local/share/rea/evidence/plex-1.43.4.10903",
+  "limitations": [
+    "External and dynamic client semantic relationships remain unknown",
+    "No official-client playback flow has been executed",
+    "FFmpeg/ffprobe absent on host; media tests can skip"
+  ]
+}

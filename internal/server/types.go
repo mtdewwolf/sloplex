@@ -10,7 +10,8 @@ import (
 // MediaContainer is the envelope of every API response.
 // See docs/spec/http-api.md.
 type MediaContainer struct {
-	XMLName xml.Name `xml:"MediaContainer" json:"-"`
+	XMLName        xml.Name `xml:"MediaContainer" json:"-"`
+	*PlayQueueInfo `xml:"-"`
 
 	Size      int  `xml:"size,attr" json:"size"`
 	TotalSize *int `xml:"totalSize,attr,omitempty" json:"totalSize,omitempty"`
@@ -23,6 +24,7 @@ type MediaContainer struct {
 	ViewGroup           string `xml:"viewGroup,attr,omitempty" json:"viewGroup,omitempty"`
 
 	FriendlyName      string `xml:"friendlyName,attr,omitempty" json:"friendlyName,omitempty"`
+	Identifier        string `xml:"identifier,attr,omitempty" json:"identifier,omitempty"`
 	MachineIdentifier string `xml:"machineIdentifier,attr,omitempty" json:"machineIdentifier,omitempty"`
 	Version           string `xml:"version,attr,omitempty" json:"version,omitempty"`
 	Platform          string `xml:"platform,attr,omitempty" json:"platform,omitempty"`
@@ -31,9 +33,10 @@ type MediaContainer struct {
 
 	Directory []Directory `xml:"Directory" json:"Directory,omitempty"`
 	// Metadata elements take their XML name from Metadata.XMLName (e.g. "Video").
-	Metadata []Metadata    `json:"Metadata,omitempty"`
-	Account  []AccountElem `xml:"Account" json:"Account,omitempty"`
-	Hub      []Hub         `xml:"Hub" json:"Hub,omitempty"`
+	Metadata      []Metadata      `json:"Metadata,omitempty"`
+	Account       []AccountElem   `xml:"Account" json:"Account,omitempty"`
+	Hub           []Hub           `xml:"Hub" json:"Hub,omitempty"`
+	MediaProvider []MediaProvider `xml:"MediaProvider" json:"MediaProvider,omitempty"`
 
 	TranscodeSession []TranscodeSession `xml:"TranscodeSession" json:"TranscodeSession,omitempty"`
 
@@ -70,6 +73,9 @@ type Hub struct {
 	Title         string `xml:"title,attr" json:"title"`
 	Size          int    `xml:"size,attr" json:"size"`
 	More          Bool   `xml:"more,attr" json:"more"`
+	Key           string `xml:"key,attr,omitempty" json:"key,omitempty"`
+	HubKey        string `xml:"hubKey,attr,omitempty" json:"hubKey,omitempty"`
+	Context       string `xml:"context,attr,omitempty" json:"context,omitempty"`
 	// Metadata elements take their XML name from Metadata.XMLName.
 	Metadata []Metadata `json:"Metadata,omitempty"`
 }
@@ -95,7 +101,9 @@ func (b Bool) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
 
 // Directory is a navigable entry such as a library section.
 type Directory struct {
+	ID         string     `xml:"id,attr,omitempty" json:"id,omitempty"`
 	Key        string     `xml:"key,attr" json:"key"`
+	HubKey     string     `xml:"hubKey,attr,omitempty" json:"hubKey,omitempty"`
 	Title      string     `xml:"title,attr" json:"title"`
 	Type       string     `xml:"type,attr,omitempty" json:"type,omitempty"`
 	Agent      string     `xml:"agent,attr,omitempty" json:"agent,omitempty"`
@@ -126,9 +134,13 @@ type Metadata struct {
 	Type               string `xml:"type,attr" json:"type"`
 	// PlaylistType and Smart describe playlists; PlaylistItemID marks an
 	// item's entry in one.
-	PlaylistType   string `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
-	Smart          string `xml:"smart,attr,omitempty" json:"smart,omitempty"`
-	PlaylistItemID int    `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
+	PlaylistType    string          `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
+	Smart           string          `xml:"smart,attr,omitempty" json:"smart,omitempty"`
+	PlaylistItemID  int             `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
+	PlayQueueItemID int             `xml:"playQueueItemID,attr,omitempty" json:"playQueueItemID,omitempty"`
+	SessionKey      string          `xml:"sessionKey,attr,omitempty" json:"sessionKey,omitempty"`
+	User            *PlaybackUser   `xml:"User,omitempty" json:"User,omitempty"`
+	Player          *PlaybackPlayer `xml:"Player,omitempty" json:"Player,omitempty"`
 	// Subtype and CollectionSource describe collections.
 	Subtype          string `xml:"subtype,attr,omitempty" json:"subtype,omitempty"`
 	CollectionSource string `xml:"collectionSource,attr,omitempty" json:"collectionSource,omitempty"`
@@ -276,7 +288,7 @@ func wantsJSON(r *http.Request) bool {
 
 // writeContainer encodes mc as XML or JSON according to the Accept header.
 func writeContainer(w http.ResponseWriter, r *http.Request, mc MediaContainer) {
-	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account) + len(mc.Hub) + len(mc.TranscodeSession)
+	mc.Size = len(mc.Directory) + len(mc.Metadata) + len(mc.Account) + len(mc.Hub) + len(mc.MediaProvider) + len(mc.TranscodeSession)
 	if wantsJSON(r) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(struct {
@@ -288,6 +300,10 @@ func writeContainer(w http.ResponseWriter, r *http.Request, mc MediaContainer) {
 	_, _ = w.Write([]byte(xml.Header))
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
-	_ = enc.Encode(mc)
+	if mc.PlayQueueInfo == nil {
+		_ = enc.Encode(mc)
+	} else {
+		_ = enc.EncodeElement(mc, xml.StartElement{Name: xml.Name{Local: "MediaContainer"}, Attr: mc.PlayQueueInfo.xmlAttrs()})
+	}
 	_, _ = w.Write([]byte("\n"))
 }

@@ -106,8 +106,9 @@ Reports a playback update. Parameters:
   200.
 - `duration`: the length in ms. When it is absent, the item's stored duration
   is used.
-- `state`: `playing`, `paused`, `buffering`, or `stopped`. It is accepted and
-  ignored.
+- `state`: `playing`, `paused`, `buffering`, or `stopped`. It does not affect
+  playstate. With a client identifier it also drives the session list; see
+  [playback-sessions.md](playback-sessions.md).
 
 The item MUST be a leaf; otherwise the response is 400. The completion rule
 below applies.

@@ -101,7 +101,7 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTimeline(w http.ResponseWriter, r *http.Request) {
-	if s.reportPosition(w, r, false) {
+	if s.reportTimeline(w, r) {
 		w.WriteHeader(http.StatusOK)
 	}
 }
@@ -122,7 +122,7 @@ func (s *Server) handleTimelinePost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state must be stopped, buffering, playing or paused", http.StatusBadRequest)
 		return
 	}
-	if s.reportPosition(w, r, false) {
+	if s.reportTimeline(w, r) {
 		writeContainer(w, r, MediaContainer{})
 	}
 }

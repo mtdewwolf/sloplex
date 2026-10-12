@@ -73,6 +73,8 @@ type Server struct {
 	tc        *transcode.Manager
 	subs      *subtitles.Service
 	playlists *playlists.Store
+	queues    *queueStore
+	playback  *playbackStore
 	updates   *updates.Checker
 	truenas   *truenas.Store
 	prefs     *preferences.Store
@@ -105,6 +107,8 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	}
 	auth := newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts)
 	return &Server{
+		queues:    newQueueStore(),
+		playback:  newPlaybackStore(),
 		playlists: d.Playlists, updates: d.Updates, truenas: d.TrueNAS, prefs: d.Prefs, tn: realTrueNAS{},
 		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
@@ -118,6 +122,8 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleRoot)
 	mux.HandleFunc("GET /identity", s.handleIdentity)
+	mux.HandleFunc("GET /status/sessions", s.requireAdmin(s.handlePlaybackSessions))
+	mux.HandleFunc("GET /media/providers", s.handleMediaProviders)
 	mux.HandleFunc("GET /library", s.handleLibrary)
 	mux.HandleFunc("GET /library/sections", s.handleSections)
 	mux.HandleFunc("GET /library/sections/{id}", s.handleSection)
@@ -142,6 +148,7 @@ func (s *Server) Handler() http.Handler {
 	s.streamRoutes(mux)
 	s.collectionRoutes(mux)
 	s.playlistRoutes(mux)
+	s.playQueueRoutes(mux)
 	s.updateRoutes(mux)
 	s.preferenceRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())
@@ -149,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 		http.Redirect(w, r, "/web/", http.StatusMovedPermanently)
 	})
 	mux.HandleFunc("GET /hubs/search", s.handleHubSearch)
+	s.homeHubRoutes(mux)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /library/sections/{id}/search", s.handleSearch)
 	mux.HandleFunc("GET /library/onDeck", s.handleOnDeck)

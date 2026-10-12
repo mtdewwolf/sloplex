@@ -1,28 +1,24 @@
 # Contributing to Sloplex
 
-## Clean-room rules (mandatory)
+## Sources and implementation
 
-Sloplex is a clean-room implementation. The protocol specification in
-[`docs/spec/`](docs/spec/README.md) is the only source of truth for
-implementation code.
+The project owner revised the clean-room source restriction on 2026-10-12
+and authorized REA analysis of the supplied Plex Linux release. Public
+API documentation, lawful runtime observations, static analysis of supplied
+artifacts, and original design may inform compatibility research.
 
-1. **Never** use decompiled, disassembled, or otherwise reverse-engineered
-   code or binaries of any proprietary media server. Do not paste such
-   material into issues, pull requests, or commits, either.
-2. **Never** use leaked or proprietary source code.
-3. New wire behaviour goes into `docs/spec/` first, or in the same pull
-   request. Every fact needs a **Provenance** entry that names an allowed
-   source:
-   - public documentation;
-   - black-box observation of traffic from software you lawfully run;
-   - our own design.
-4. Implementation code in `cmd/` and `internal/` is written from the spec.
-   Review checks that code and spec agree.
-5. Sloplex does not contact plex.tv or any other hosted service. Pull
-   requests that add such calls will not be accepted.
-
-If you are unsure whether a source is allowed, open an issue and ask
-**before** using it.
+1. Record new wire behavior in `docs/spec/` before or alongside code changes.
+   Every claim must identify its source, target version and limitations.
+2. Distinguish static findings, inferred behavior and observed runtime behavior.
+   Record artifact SHA-256, REA Evidence IDs and source locations for binary or
+   shipped-client research. Do not call an analysis timeout a successful result.
+3. Write original implementation code. Do not import leaked source or copy
+   proprietary implementation code into this repository. Keep vendor binaries
+   and raw analysis output outside versioned changes; retain an evidence index.
+4. Preserve local regression tests and separately record live-server/client
+   validation. A passing internal suite does not establish ecosystem parity.
+5. Sloplex does not contact plex.tv. Existing local accounts, authentication and
+   hosted-service boundaries remain in effect.
 
 ## Workflow
 

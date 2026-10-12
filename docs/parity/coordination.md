@@ -133,3 +133,62 @@ repository vet pass; targeted staged-persistence and inherited-stderr race
 regressions pass. Coordinator ledgers record external-test limitations.
 Resume new work from the current integration head, preserving earlier agent
 branches. Queues and account language preferences remain unimplemented.
+
+## 2026-10-12: REA research continuation and provider fallback
+
+Current user authorization: continue using REA to investigate the supplied
+Plex Linux release and improve Sloplex until an actual provider usage limit.
+At a confirmed current-provider limit, fall back to Claude Opus 5.5 using T3
+provider `claudeAgent`, model `claude-opus-5-5`. At its confirmed usage limit,
+fall back to provider `cursor`, model `claude-opus-5-5`. These exact targets
+were verified in the live T3 catalog on 2026-10-12. Do not switch based on
+elapsed time, tool timeouts, output size, context compaction or an assumed limit.
+No limit has been reported during this research continuation.
+
+The owner explicitly replaced the clean-room source restriction. Updated
+CONTRIBUTING and specs govern source provenance and original implementation;
+no-plex.tv and local authorization behavior remain. IDA setup was canceled.
+REA runs through `~/.local/bin/rea-ubuntu`; Hopper demo and Ghidra are verified.
+The custom launcher produces registration-doctor drift, while actual MCP
+startup and native fixture operations pass. Do not blindly rerun setup.
+
+Current integration work is uncommitted in `/home/developer/sloplex`. Nine
+local video queue operations and their regressions are implemented. Targeted
+and full race suites and repository vet pass after fixing queue XML attributes.
+The current increment investigates timeline-driven selection. No old queue
+worktree or prior subagent is active on these new changes; do not duplicate
+those historical assignments. Pre-existing web/branding/marketing edits and
+the user-supplied RPM must be preserved.
+
+Raw artifact research is in `~/.local/share/rea/evidence/plex-1.43.4.10903/`.
+The three queue factories were extracted with exact hash checks from the
+shipped Plex Web main JS member. Focused REA Evidence:
+`ev_121220e6825831cf9c8902df3d9b0946db689e3a1ff7078fdaa0261f86e560c0`.
+Full-server Hopper/Ghidra analysis timed out; use the recorded smaller client
+artifacts for next questions instead of repeating rejected full analyses.
+
+### Resumed queue and provider investigation
+
+REA queue captures now complete successfully from copies of the initialized
+unclaimed profile. Queue windows, Up Next ordering, marker serialization and
+retirement are implemented with targeted regressions; full race and vet pass.
+An earlier capture retry failed at finalization and is excluded from behavior
+conclusions. Evidence is indexed under docs/evidence/*queue-windows.json and
+*queue-regions.json.
+
+ProviderCollection and ProviderModel/Feature factories were hash-verified and
+analyzed with REA. The populated PMS provider response was captured under
+loopback isolation. Local /media/providers now advertises supported
+video features and visible section directories. Targeted race checks and vet
+pass; full integrated race check follows. No usage limit has been reported.
+Next candidate: functional home/section hubs using the saved runtime evidence.
+No new subagents were launched; preserve historical worktrees and user edits.
+
+Home/section hubs are now implemented and validated. Full uncached race suite,
+vet, formatting and diff check pass after integration. Provider discovery has
+eight implemented feature entries, Home and section hub links. The controlled
+hub capture has Evidence ev_a2589c57520a19ca2157193642c68d52cfb2fc34d844e5852d0ace51fd45d03c.
+No provider limit reported; continuous REA goal remains active. Next bounded
+gaps: playback sessions/timeline telemetry and official-client startup flow,
+then the built-in player's queue use. Reuse saved captures and avoid repeating
+full native analyses that timed out. Existing UI/branding changes are preserved.

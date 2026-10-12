@@ -192,3 +192,125 @@ exits while a descendant retains stderr produces the bounded-wait error.
 That targeted race test passed, as did progressive revocation and the full
 `GOMAXPROCS=2 go test -race -p 2 ./... -timeout=90s` suite. Existing limits
 remain: absent FFmpeg/ffprobe and no live PMS/official-client validation.
+
+## 2026-10-12: REA-backed video queue increment
+
+The owner authorized static REA analysis of the supplied Plex Linux RPM and
+replaced the earlier clean-room source restriction. CONTRIBUTING, the spec
+index and README now describe source provenance and original implementation.
+Standalone local account and no-plex.tv behavior remain in effect.
+
+Added nine local video play-queue operations: creation/read/addition,
+clear/remove/move, reset and shuffle/unshuffle. Sources resolve local metadata
+or the caller's playlist; repeated metadata receives distinct entry IDs.
+Mutations are synchronized and versioned, while response projection rechecks
+library access and availability. Queue windows retain a full-queue selection
+offset. Memory and idle limits are explicit in `docs/spec/playqueues.md`.
+
+REA 6.4.0 recovered three shipped Plex Web 4.160.0 factories from PMS
+1.43.4.10903; each extracted source span matched the REA-recorded SHA-256.
+The focused application graph is complete within that subset. Dynamic and
+external semantic dependencies remain unknown. Full-server Hopper and Ghidra
+attempts timed out (120000/330000 ms); they produced no native behavior proof.
+Raw vendor code/output stays outside versioned changes. The sanitized evidence
+index is `docs/evidence/plex-1.43.4-playqueues.json`.
+
+Validation on Go 1.27.2: targeted HTTP lifecycle, source, authorization and
+concurrent-add race tests passed; full server race suite passed; repository
+`GOMAXPROCS=2 go vet -p 2 ./...` and
+`GOMAXPROCS=2 go test -race -p 2 ./... -timeout=90s` passed. The initial integrated
+run exposed an XML reflection panic from a nil embedded queue pointer. Queue
+attributes now serialize explicitly, and the full suite passes after that fix.
+Additional account/server capacity and idle-expiration regression checks pass.
+FFmpeg/ffprobe remain absent; external media tests can skip. No Plex server
+runtime, official-client playback or browser playback was exercised.
+
+Remaining queue work: timeline-driven selection, Up Next regions, trailers,
+continuous generation, device handoff/events and player integration. G09 remains
+partial alongside the still-open session/hub/event families. All changes are
+local and uncommitted; the pre-existing web/branding edits and supplied RPM are
+preserved.
+
+### Timeline selection and first controlled PMS runtime
+
+REA recovered and hash-verified shipped Plex Web factory 63224. Its timeline
+request contains a playQueueItemID alongside the metadata key and position,
+without a queue ID. Sloplex now resolves that occurrence within the caller's
+active queues, optionally narrowed by playQueueID, validates its metadata,
+saves playstate and then publishes selection. Repeat reports on the same
+occurrence do not advance the queue version; rejected or failed-save requests
+leave selection unchanged. Targeted race tests cover repeated metadata,
+version stability, invalid states/IDs, metadata mismatches, cross-account
+access and save failure. Repository vet and the full race suite pass.
+
+REA process capture also ran PMS 1.43.4.10903 in a private network namespace
+with only loopback. Root, empty library and preferences endpoints returned
+200; 151 preference IDs were observed. This is controlled server runtime
+evidence, not an official-client playback test. A synthetic-video queue probe
+is in progress. The shipped-client/timeline Evidence index is
+`docs/evidence/plex-1.43.4-timeline.json`.
+
+### Controlled queue windows and Up Next regions
+
+Resumed from the interrupted runtime investigation. Two complete REA captures
+confirmed positive windows (radius N), zero windows (empty metadata), ordinary
+additions into a manual Up Next region, next insertion at its front, and marker
+retirement when playback moves past that region. Captures used isolated
+loopback networking, synthetic videos and a copied initialized local profile.
+The first retry failed during capture finalization; its partial startup output
+is not treated as queue evidence.
+
+Implemented playQueueLastAddedItemID in JSON/XML, manual-region ordering,
+zero windows, both-disabled window rejection, timeline marker retirement and
+consistent marker adjustment after deletion. Hidden markers are omitted. PMS
+can return stale version/count/marker fields immediately after deletion;
+Sloplex continues returning its committed state. Move/shuffle/reset marker
+behavior remains an original bounded design, not proven full parity.
+
+Targeted queue/timeline race regressions, repository vet, diff check and the
+uncached full race suite pass. Evidence records: plex-1.43.4-queue-windows.json
+and plex-1.43.4-queue-regions.json. No official-client or stream playback was
+validated. Existing web/branding changes remain preserved and uncommitted.
+
+### Provider discovery and home hubs
+
+REA recovered five additional hash-verified shipped client model factories and
+captured provider discovery on populated synthetic libraries. Added authenticated
+/media/providers, original local video feature advertising, and access-filtered
+section directories. A further native capture established home/section hub
+shapes, working detail keys and per-hub count behavior.
+
+Added four home hubs and two section hubs, detail routes, continue-watching
+provider discovery and metadata-source hub keys usable for local queues. Resume
+selection, TV recent episode projection and recommendation bounds are documented
+as Sloplex design; the movie-only native profile had empty resume/On Deck hubs.
+Hidden and unavailable media are filtered before counts and keys.
+
+Provider/home-hub/search regressions pass under race, including advertised queue
+route consumption, JSON/XML decoding, paging, account state and access changes.
+Full provider integration race suite passed before the hub increment; final
+hub integration checks follow. Evidence: plex-1.43.4-providers.json and
+plex-1.43.4-hubs.json. No official-client or stream playback claim.
+
+Final combined provider/home-hub gate: uncached full repository race suite,
+repository vet, gofmt and diff check pass. Unavailable-media projection
+regression passed alongside account visibility and state isolation. No provider
+usage limit was reported. Work remains local and uncommitted.
+
+### Playback sessions
+
+Two REA process captures of PMS 1.43.4 established how timeline reports
+populate `/status/sessions`: identity follows `X-Plex-Session-Identifier`,
+falling back to the client identifier, and ignores query-string session
+parameters. A report under an existing identity replaces its item and player,
+and `stopped` removes the session without needing `time`. The identity
+capture's terminal output truncated; the probe's sanitized observation file
+carries the complete sequence.
+
+Added admin-only `/status/sessions` and timeline session tracking with
+account scoping, bounded in-memory lifetime and limits, save-before-publish
+ordering and per-listing access checks. Fixed a regression where the new
+path rejected unknown `state` values on the legacy `GET /:/timeline`, which
+must ignore them. A regression replays the observed PMS identity sequence.
+Evidence: plex-1.43.4-sessions.json. Transcode session details, expiry
+timing parity and official-client playback remain unverified.

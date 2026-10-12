@@ -1,0 +1,323 @@
+{
+  "format": "sloplex-artifact-research/1",
+  "recorded": "2026-10-12",
+  "target": "PMS 1.43.4.10903-e5521bd8c / Plex Web 4.160.0",
+  "runtime": {
+    "rea_evidence_id": "ev_407df662fb86075d1ef3d1f7db13adaf6d2e25ee1898b59758ecab3356da9669",
+    "scope": "GET /media/providers on copied initialized local profile, loopback-only isolated namespace; synthetic local movie libraries. No official client executed.",
+    "observations": [
+      {
+        "path": "/media/providers",
+        "status": 200,
+        "root_name": "MediaContainer",
+        "attribute_names": [
+          "allowCameraUpload",
+          "allowChannelAccess",
+          "allowMediaDeletion",
+          "allowSharing",
+          "allowSync",
+          "allowTuners",
+          "apiVersion",
+          "backgroundProcessing",
+          "companionProxy",
+          "countryCode",
+          "diagnostics",
+          "eventStream",
+          "friendlyName",
+          "livetv",
+          "machineIdentifier",
+          "musicAnalysis",
+          "myPlex",
+          "myPlexMappingState",
+          "myPlexSigninState",
+          "myPlexSubscription",
+          "platform",
+          "platformVersion",
+          "pluginHost",
+          "pushNotifications",
+          "readOnlyLibraries",
+          "size",
+          "startState",
+          "streamingBrainVersion",
+          "sync",
+          "transcoderActiveVideoSessions",
+          "transcoderAudio",
+          "transcoderLyrics",
+          "transcoderSubtitles",
+          "transcoderVideo",
+          "transcoderVideoBitrates",
+          "transcoderVideoQualities",
+          "transcoderVideoResolutions",
+          "updatedAt",
+          "updater",
+          "version",
+          "voiceSearch"
+        ],
+        "child_count": 1,
+        "providers": [
+          {
+            "attributes": {
+              "identifier": "com.plexapp.plugins.library",
+              "title": "Library",
+              "types": "video,audio,photo",
+              "protocols": "stream,download"
+            },
+            "features": [
+              {
+                "attributes": {
+                  "key": "/library/sections",
+                  "type": "content"
+                },
+                "children": [
+                  {
+                    "tag": "Directory",
+                    "attributes": {
+                      "hubKey": "/hubs",
+                      "title": "Home"
+                    }
+                  },
+                  {
+                    "tag": "Directory",
+                    "attributes": {
+                      "agent": "tv.plex.agents.movie",
+                      "language": "en-US",
+                      "refreshing": "0",
+                      "scanner": "Plex Movie",
+                      "uuid": "5c92a992-eeb4-4bb6-9bdd-dbe61b87e7d3",
+                      "id": "2",
+                      "key": "/library/sections/2",
+                      "hubKey": "/hubs/sections/2",
+                      "type": "movie",
+                      "title": "REA Queue Probe",
+                      "updatedAt": "1791780841",
+                      "scannedAt": "1791780843"
+                    }
+                  },
+                  {
+                    "tag": "Directory",
+                    "attributes": {
+                      "agent": "com.plexapp.agents.none",
+                      "language": "xn",
+                      "refreshing": "0",
+                      "scanner": "Plex Movie Scanner",
+                      "uuid": "f63da539-12fb-4ed8-a292-707f076b182f",
+                      "id": "1",
+                      "key": "/library/sections/1",
+                      "hubKey": "/hubs/sections/1",
+                      "type": "movie",
+                      "subtype": "clip",
+                      "title": "REA Queue Probe",
+                      "updatedAt": "1791780841",
+                      "scannedAt": "1791780841"
+                    }
+                  }
+                ]
+              },
+              {
+                "attributes": {
+                  "key": "/hubs/search",
+                  "type": "search"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/library/matches",
+                  "type": "match"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/library/metadata",
+                  "type": "metadata"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/:/rate",
+                  "type": "rate"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/photo/:/transcode",
+                  "type": "imagetranscoder"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/hubs/promoted",
+                  "type": "promoted"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/hubs/continueWatching",
+                  "type": "continuewatching"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "key": "/actions",
+                  "type": "actions"
+                },
+                "children": [
+                  {
+                    "tag": "Action",
+                    "attributes": {
+                      "id": "removeFromContinueWatching",
+                      "key": "/actions/removeFromContinueWatching"
+                    }
+                  }
+                ]
+              },
+              {
+                "attributes": {
+                  "flavor": "universal",
+                  "key": "/playlists",
+                  "type": "playlist"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "flavor": "universal",
+                  "key": "/playQueues",
+                  "type": "playqueue"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "scrobbleKey": "/:/scrobble",
+                  "unscrobbleKey": "/:/unscrobble",
+                  "key": "/:/timeline",
+                  "type": "timeline"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "type": "manage"
+                },
+                "children": []
+              },
+              {
+                "attributes": {
+                  "type": "queryParser"
+                },
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "static": {
+    "rea_evidence_id": "ev_18b32ddf90b374519cb63c3af7595e67e0d2d57e45d1e9ff799ed774ad8e5aaf",
+    "parent_evidence_id": "ev_ba44b1c791d65a1c36cfa77373085e656379e396798b7d46683516e28955ad2b",
+    "source_sha256": "8be776dd488577eaf6d3e650d803dfead60375578c1dd92849001ec1139c8063",
+    "factory_hashes_verified": true,
+    "modules": [
+      {
+        "module_key": "34094",
+        "source_sha256": "36bb1ebce42bdff16ff72cb9d0de0bf9f75071062020b6787f39bf492f775f3e",
+        "location": {
+          "start": {
+            "line": 2,
+            "column": 210567
+          },
+          "end": {
+            "line": 2,
+            "column": 211015
+          }
+        }
+      },
+      {
+        "module_key": "73971",
+        "source_sha256": "a2fa0fe88523946be07a5a9f51167d702ab7e39f918133da5039bbca1c3273a0",
+        "location": {
+          "start": {
+            "line": 2,
+            "column": 214307
+          },
+          "end": {
+            "line": 2,
+            "column": 220194
+          }
+        }
+      },
+      {
+        "module_key": "75734",
+        "source_sha256": "a704fd3fad60de44b7d075a64f4797f1d22f96c8c560dba34daf689680a4e6fa",
+        "location": {
+          "start": {
+            "line": 2,
+            "column": 445564
+          },
+          "end": {
+            "line": 2,
+            "column": 446149
+          }
+        }
+      },
+      {
+        "module_key": "90755",
+        "source_sha256": "63c374e7b1fd7dbfaf868845bc84a8c01f192b04d008f44a17424f013f55e948",
+        "location": {
+          "start": {
+            "line": 2,
+            "column": 131106
+          },
+          "end": {
+            "line": 2,
+            "column": 134891
+          }
+        }
+      },
+      {
+        "module_key": "92959",
+        "source_sha256": "dca28f2fa22e6bb051a7972efc89694b907f3d937dda8786c42c76711d2eb7bb",
+        "location": {
+          "start": {
+            "line": 2,
+            "column": 211022
+          },
+          "end": {
+            "line": 2,
+            "column": 214300
+          }
+        }
+      }
+    ],
+    "observed": [
+      "ProviderCollection uses /media/providers",
+      "ProviderModel reads MediaProvider and Feature relations",
+      "Content feature has Directory children; directories accept key, title, type and id",
+      "ProviderFeature reads key, flavor, scrobbleKey and unscrobbleKey; timeline keys are converted to watch/unwatch actions"
+    ],
+    "limitations": [
+      "CommonJS and ESM binding relationships were recovered from inert syntax and resolved only within the inventoried artifact container.",
+      "JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed.",
+      "Static imports, entrypoints, workers, endpoints, and storage relationships do not prove runtime execution.",
+      "Static paths and relationships may remain unresolved when expressions are dynamic or obfuscated.",
+      "Webpack/Rspack factories were recovered from AST literals; REA did not invoke push handlers or bundle bootstrap code."
+    ]
+  },
+  "design": [
+    "Supported local video features are advertised, including implemented home/section hubs and continue-watching discovery. Cloud, matching, rating and management remain absent.",
+    "Section directories are filtered through local account library permissions.",
+    "Filesystem Location fields are omitted from discovery."
+  ],
+  "limitations": [
+    "No official-client interoperability established",
+    "Broader root capabilities and hub/client startup remain partial"
+  ]
+}

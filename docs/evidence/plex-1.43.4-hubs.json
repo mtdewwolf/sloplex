@@ -1,0 +1,561 @@
+{
+  "format": "sloplex-runtime-contract/1",
+  "recorded": "2026-10-12",
+  "target": "PMS 1.43.4.10903-e5521bd8c",
+  "rea_evidence_id": "ev_a2589c57520a19ca2157193642c68d52cfb2fc34d844e5852d0ace51fd45d03c",
+  "scope": "Controlled GET hub requests on initialized synthetic movie libraries in an isolated loopback-only namespace. No official client or media playback stream.",
+  "observations": [
+    {
+      "path": "/hubs",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "size"
+      ],
+      "child_count": 8,
+      "nodes": [
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/continueWatching",
+            "title": "Continue Watching",
+            "type": "mixed",
+            "hubIdentifier": "home.continue",
+            "context": "hub.home.continue",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/onDeck",
+            "title": "On Deck",
+            "type": "episode",
+            "hubIdentifier": "home.ondeck",
+            "context": "hub.home.ondeck",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "hubKey": "/library/metadata/3,4",
+            "key": "/hubs/home/recentlyAdded?type=1",
+            "title": "Recently Added Movies",
+            "type": "movie",
+            "hubIdentifier": "home.movies.recent",
+            "context": "hub.home.movies.recent",
+            "size": "2",
+            "more": "0"
+          },
+          "children": [
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "3",
+                "key": "/library/metadata/3",
+                "type": "movie",
+                "title": "Queue Probe A",
+                "librarySectionID": "2"
+              }
+            },
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "4",
+                "key": "/library/metadata/4",
+                "type": "movie",
+                "title": "Queue Probe B",
+                "librarySectionID": "2"
+              }
+            }
+          ]
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/recentlyAdded?type=2",
+            "title": "Recently Added TV",
+            "type": "mixed",
+            "hubIdentifier": "home.television.recent",
+            "context": "hub.home.television.recent",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/recentlyAdded?type=8",
+            "title": "Recently Added Music",
+            "type": "album",
+            "hubIdentifier": "home.music.recent",
+            "context": "hub.home.music.recent",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/recentlyAdded?type=13",
+            "title": "Recently Added Photos",
+            "type": "photo",
+            "hubIdentifier": "home.photos.recent",
+            "context": "hub.home.photos.recent",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "hubKey": "/library/metadata/1",
+            "key": "/hubs/home/recentlyAdded?type=1&personal=1",
+            "title": "Recently Added Videos",
+            "type": "clip",
+            "hubIdentifier": "home.videos.recent",
+            "context": "hub.home.videos.recent",
+            "size": "1",
+            "more": "0"
+          },
+          "children": [
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "1",
+                "key": "/library/metadata/1",
+                "type": "movie",
+                "title": "Queue Probe A",
+                "librarySectionID": "1"
+              }
+            }
+          ]
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/playlists/all?type=15&sort=lastViewedAt:desc&playlistType=video,audio",
+            "title": "Recent Playlists",
+            "type": "playlist",
+            "hubIdentifier": "home.playlists",
+            "context": "hub.home.playlists",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "path": "/hubs?count=1",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "size"
+      ],
+      "child_count": 8,
+      "nodes": [
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/continueWatching",
+            "title": "Continue Watching",
+            "type": "mixed",
+            "hubIdentifier": "home.continue",
+            "context": "hub.home.continue",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/onDeck",
+            "title": "On Deck",
+            "type": "episode",
+            "hubIdentifier": "home.ondeck",
+            "context": "hub.home.ondeck",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "hubKey": "/library/metadata/3",
+            "key": "/hubs/home/recentlyAdded?type=1",
+            "title": "Recently Added Movies",
+            "type": "movie",
+            "hubIdentifier": "home.movies.recent",
+            "context": "hub.home.movies.recent",
+            "size": "1",
+            "more": "1"
+          },
+          "children": [
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "3",
+                "key": "/library/metadata/3",
+                "type": "movie",
+                "title": "Queue Probe A",
+                "librarySectionID": "2"
+              }
+            }
+          ]
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/recentlyAdded?type=2",
+            "title": "Recently Added TV",
+            "type": "mixed",
+            "hubIdentifier": "home.television.recent",
+            "context": "hub.home.television.recent",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/recentlyAdded?type=8",
+            "title": "Recently Added Music",
+            "type": "album",
+            "hubIdentifier": "home.music.recent",
+            "context": "hub.home.music.recent",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/home/recentlyAdded?type=13",
+            "title": "Recently Added Photos",
+            "type": "photo",
+            "hubIdentifier": "home.photos.recent",
+            "context": "hub.home.photos.recent",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "hubKey": "/library/metadata/1",
+            "key": "/hubs/home/recentlyAdded?type=1&personal=1",
+            "title": "Recently Added Videos",
+            "type": "clip",
+            "hubIdentifier": "home.videos.recent",
+            "context": "hub.home.videos.recent",
+            "size": "1",
+            "more": "0"
+          },
+          "children": [
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "1",
+                "key": "/library/metadata/1",
+                "type": "movie",
+                "title": "Queue Probe A",
+                "librarySectionID": "1"
+              }
+            }
+          ]
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/playlists/all?type=15&sort=lastViewedAt:desc&playlistType=video,audio",
+            "title": "Recent Playlists",
+            "type": "playlist",
+            "hubIdentifier": "home.playlists",
+            "context": "hub.home.playlists",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "path": "/hubs/sections/2",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "librarySectionID",
+        "librarySectionTitle",
+        "librarySectionUUID",
+        "size"
+      ],
+      "child_count": 5,
+      "nodes": [
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/sections/2/continueWatching/items",
+            "title": "Continue Watching",
+            "type": "movie",
+            "hubIdentifier": "movie.inprogress.2",
+            "context": "hub.movie.inprogress",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/library/sections/2/all?sort=originallyAvailableAt:desc&originallyAvailableAt>=-1y",
+            "title": "Recently Released Movies",
+            "type": "movie",
+            "hubIdentifier": "movie.recentlyreleased.2",
+            "context": "hub.movie.recentlyreleased",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "hubKey": "/library/metadata/3,4",
+            "key": "/library/sections/2/all?sort=addedAt:desc",
+            "title": "Recently Added in REA Queue Probe",
+            "type": "movie",
+            "hubIdentifier": "movie.recentlyadded.2",
+            "context": "hub.movie.recentlyadded",
+            "size": "2",
+            "more": "0"
+          },
+          "children": [
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "3",
+                "key": "/library/metadata/3",
+                "type": "movie",
+                "title": "Queue Probe A",
+                "librarySectionID": "2"
+              }
+            },
+            {
+              "tag": "Video",
+              "attributes": {
+                "ratingKey": "4",
+                "key": "/library/metadata/4",
+                "type": "movie",
+                "title": "Queue Probe B",
+                "librarySectionID": "2"
+              }
+            }
+          ]
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/library/sections/2/all?unwatched=1&audienceRating>=7.0&sort=audienceRating:desc",
+            "title": "Top Unwatched Movies",
+            "type": "movie",
+            "hubIdentifier": "movie.topunwatched.2",
+            "context": "hub.movie.topunwatched",
+            "size": "0",
+            "more": "0",
+            "random": "1"
+          },
+          "children": []
+        },
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/library/sections/2/all?sort=lastViewedAt:desc&unwatched=0&viewOffset=0",
+            "title": "Recently Watched Movies",
+            "type": "movie",
+            "hubIdentifier": "movie.recentlyviewed.2",
+            "context": "hub.movie.recentlyviewed",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "path": "/hubs/home/recentlyAdded?type=1",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "size"
+      ],
+      "child_count": 2,
+      "nodes": [
+        {
+          "tag": "Video",
+          "attributes": {
+            "ratingKey": "3",
+            "key": "/library/metadata/3",
+            "guid": "local://3",
+            "type": "movie",
+            "title": "Queue Probe A",
+            "librarySectionTitle": "REA Queue Probe",
+            "librarySectionID": "2",
+            "librarySectionKey": "/library/sections/2",
+            "summary": "",
+            "year": "2026",
+            "thumb": "/library/metadata/3/thumb/1791780842",
+            "art": "/library/metadata/3/art/1791780842",
+            "duration": "4000",
+            "addedAt": "1791780005",
+            "updatedAt": "1791780842"
+          },
+          "children": [
+            {
+              "tag": "Media",
+              "attributes": {}
+            },
+            {
+              "tag": "Image",
+              "attributes": {
+                "type": "coverPoster"
+              }
+            },
+            {
+              "tag": "Image",
+              "attributes": {
+                "type": "background"
+              }
+            }
+          ]
+        },
+        {
+          "tag": "Video",
+          "attributes": {
+            "ratingKey": "4",
+            "key": "/library/metadata/4",
+            "guid": "local://4",
+            "type": "movie",
+            "title": "Queue Probe B",
+            "librarySectionTitle": "REA Queue Probe",
+            "librarySectionID": "2",
+            "librarySectionKey": "/library/sections/2",
+            "summary": "",
+            "year": "2026",
+            "thumb": "/library/metadata/4/thumb/1791780843",
+            "art": "/library/metadata/4/art/1791780843",
+            "duration": "4000",
+            "addedAt": "1791780005",
+            "updatedAt": "1791780843"
+          },
+          "children": [
+            {
+              "tag": "Media",
+              "attributes": {}
+            },
+            {
+              "tag": "Image",
+              "attributes": {
+                "type": "coverPoster"
+              }
+            },
+            {
+              "tag": "Image",
+              "attributes": {
+                "type": "background"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/hubs/home/continueWatching",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "size"
+      ],
+      "child_count": 0,
+      "nodes": []
+    },
+    {
+      "path": "/hubs/continueWatching",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "size"
+      ],
+      "child_count": 1,
+      "nodes": [
+        {
+          "tag": "Hub",
+          "attributes": {
+            "key": "/hubs/continueWatching/items",
+            "title": "Continue Watching",
+            "type": "mixed",
+            "hubIdentifier": "continueWatching",
+            "context": "hub.continueWatching",
+            "size": "0",
+            "more": "0"
+          },
+          "children": []
+        }
+      ]
+    },
+    {
+      "path": "/hubs/home/onDeck",
+      "status": 200,
+      "root_name": "MediaContainer",
+      "attribute_names": [
+        "allowSync",
+        "identifier",
+        "size"
+      ],
+      "child_count": 0,
+      "nodes": []
+    }
+  ],
+  "observed": [
+    "Home hub identifiers, keys, title/type/context fields and hubKey metadata source paths",
+    "count=1 limits each hub independently and sets more=1 when more items remain",
+    "Home detail keys return direct metadata containers",
+    "Continue-watching provider key returns a single Hub whose key returns metadata items",
+    "Movie section contains in-progress and recently-added hub shapes"
+  ],
+  "design": [
+    "Sloplex chooses resume items from local nonzero playback positions and existing On Deck episode logic",
+    "Recently Added TV projects available episodes; TV grouping was not observed in this movie-only probe",
+    "Only four home and two section hubs are implemented; music/photos/rating/release recommendations remain absent"
+  ],
+  "limitations": [
+    "Continue Watching and On Deck were empty on this native profile; nonempty selection policy is an original Sloplex design",
+    "No TV hub grouping or unavailable-media behavior was observed",
+    "No official-client startup or playback compatibility established"
+  ]
+}
