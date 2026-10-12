@@ -73,6 +73,7 @@ type Server struct {
 	tc        *transcode.Manager
 	subs      *subtitles.Service
 	playlists *playlists.Store
+	queues    *queueStore
 	updates   *updates.Checker
 	truenas   *truenas.Store
 	prefs     *preferences.Store
@@ -105,6 +106,7 @@ func New(ctx context.Context, opts Options, d Deps) *Server {
 	}
 	auth := newAuthenticator(opts.Tokens, opts.AllowedNetworks, d.Accounts)
 	return &Server{
+		queues:    newQueueStore(),
 		playlists: d.Playlists, updates: d.Updates, truenas: d.TrueNAS, prefs: d.Prefs, tn: realTrueNAS{},
 		opts: opts, store: d.Store, scanner: d.Scanner, play: d.Play, art: d.Art, log: d.Log,
 		accounts: d.Accounts, tc: d.Transcoder, subs: d.Subtitles, logins: newLoginLimiter(),
@@ -142,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	s.streamRoutes(mux)
 	s.collectionRoutes(mux)
 	s.playlistRoutes(mux)
+	s.playQueueRoutes(mux)
 	s.updateRoutes(mux)
 	s.preferenceRoutes(mux)
 	mux.Handle("GET /web/", web.Handler())

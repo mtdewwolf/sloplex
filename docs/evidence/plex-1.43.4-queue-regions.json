@@ -1,0 +1,1230 @@
+{
+  "format": "sloplex-runtime-contract/1",
+  "recorded": "2026-10-12",
+  "target": "PMS 1.43.4.10903-e5521bd8c",
+  "rea_evidence_id": "ev_7fb6ec3d05c24832901cd54d860b56c319b9a61c9710fcb6712ca5c21ccde92f",
+  "scope": "Controlled local HTTP requests with two original synthetic AVI videos, a copied initialized unclaimed profile, and an isolated loopback-only network namespace. No playback stream or official client was exercised.",
+  "observations": [
+    {
+      "label": "create_queue",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueSelectedItemID": "5",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "1",
+        "playQueueVersion": "1"
+      },
+      "size": "1",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "append_second",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "6",
+        "playQueueSelectedItemID": "5",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "2",
+        "playQueueVersion": "2"
+      },
+      "size": "2",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        }
+      ]
+    },
+    {
+      "label": "append_duplicate",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "5",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "read_queue",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "5",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "timeline_duplicate",
+      "status": 200,
+      "queue_attributes": {},
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "after_timeline",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "center_window_zero",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "center_window_1",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "2",
+      "metadata": [
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "center_window_2",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "center_window_3",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "center_window_4",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "first_center_window_two",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "middle_center_window_two",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "exclude_before_zero_window",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "insert_next",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueLastAddedItemID": "7",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "4",
+        "playQueueVersion": "4"
+      },
+      "size": "4",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "5",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "6",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "8",
+          "title": "Queue Probe B"
+        }
+      ]
+    },
+    {
+      "label": "clear_queue",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "2",
+        "playQueueSelectedItemID": "7",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "1",
+        "playQueueVersion": "5"
+      },
+      "size": "1",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "7",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "create_multi_source",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "3",
+        "playQueueSelectedItemID": "9",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "1"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "9",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "10",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "11",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "multi_append",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "3",
+        "playQueueLastAddedItemID": "12",
+        "playQueueSelectedItemID": "9",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "4",
+        "playQueueVersion": "2"
+      },
+      "size": "4",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "9",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "12",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "10",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "11",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "multi_insert_next",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "3",
+        "playQueueLastAddedItemID": "12",
+        "playQueueSelectedItemID": "9",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "5",
+        "playQueueVersion": "3"
+      },
+      "size": "5",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "9",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "13",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "12",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "10",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "11",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "multi_append_after_next",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "3",
+        "playQueueLastAddedItemID": "14",
+        "playQueueSelectedItemID": "9",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "6",
+        "playQueueVersion": "4"
+      },
+      "size": "6",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "9",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "13",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "12",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "14",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "10",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "11",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "multi_delete_marker",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "3",
+        "playQueueLastAddedItemID": "14",
+        "playQueueSelectedItemID": "9",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "6",
+        "playQueueVersion": "4"
+      },
+      "size": "5",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "9",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "13",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "12",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "10",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "11",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "multi_append_after_marker_delete",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "3",
+        "playQueueLastAddedItemID": "15",
+        "playQueueSelectedItemID": "9",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "6",
+        "playQueueVersion": "6"
+      },
+      "size": "6",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "9",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "13",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "12",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "15",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "10",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "11",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "create_seven",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "7",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "middle_seven_window_0",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "middle_seven_window_1",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "middle_seven_window_2",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "5",
+      "metadata": [
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        }
+      ]
+    },
+    {
+      "label": "middle_seven_window_3",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "7",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "middle_seven_window_4",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "7",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "middle_seven_flags_{'includeBefore': '0'}",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "1",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "middle_seven_flags_{'includeAfter': '0'}",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "7",
+        "playQueueVersion": "1"
+      },
+      "size": "1",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "http_error",
+      "status": 400,
+      "body": "<html><head><title>Bad Request</title></head><body><h1>400 Bad Request</h1></body></html>"
+    },
+    {
+      "label": "next_without_marker",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueLastAddedItemID": "<pid>",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "8",
+        "playQueueVersion": "2"
+      },
+      "size": "8",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "<pid>",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "append_after_next_without_marker",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueLastAddedItemID": "24",
+        "playQueueSelectedItemID": "16",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "9",
+        "playQueueVersion": "3"
+      },
+      "size": "9",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "<pid>",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "24",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "select_past_marker",
+      "status": 200,
+      "queue_attributes": {},
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "read_past_marker",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueSelectedItemID": "19",
+        "playQueueSelectedItemOffset": "5",
+        "playQueueSelectedMetadataItemID": "4",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "9",
+        "playQueueVersion": "3"
+      },
+      "size": "9",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "<pid>",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "24",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "append_past_marker",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "4",
+        "playQueueLastAddedItemID": "25",
+        "playQueueSelectedItemID": "19",
+        "playQueueSelectedItemOffset": "5",
+        "playQueueSelectedMetadataItemID": "4",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "10",
+        "playQueueVersion": "4"
+      },
+      "size": "10",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "16",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "<pid>",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "24",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "17",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "18",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "19",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "25",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "20",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "21",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "22",
+          "title": "Queue Probe A"
+        }
+      ]
+    }
+  ],
+  "raw_evidence": "/home/developer/.local/share/rea/evidence/plex-1.43.4.10903/queue-runtime-regions.json",
+  "limitations": [
+    "Responses to deleting a queue entry can contain pre-mutation version/count/marker fields; Sloplex returns its current state consistently.",
+    "Marker behavior for move, shuffle, reset and visibility changes has not been compared exhaustively."
+  ],
+  "credentials": "Local admin token kept in memory; private logs and credentials are excluded."
+}

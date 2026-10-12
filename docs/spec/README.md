@@ -41,6 +41,7 @@ existing contracts; see [updates.md](updates.md).
 | [streams.md](streams.md)   | Audio tracks, subtitles, stream selection, burn-in         |
 | [metadata.md](metadata.md) | Local `.nfo` metadata: summaries, ratings, genres, cast    |
 | [collections.md](collections.md) | Collections: automatic from `.nfo` sets, and manual  |
+| [playqueues.md](playqueues.md) | Local video queue lifecycle, windows, ordering and ownership |
 | [playlists.md](playlists.md) | Per-account playlists of movies and episodes           |
 | [updates.md](updates.md)   | Update check and one-click updates through TrueNAS         |
 | [preferences.md](preferences.md) | Server preferences registry and `/:/prefs`           |

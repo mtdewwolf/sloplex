@@ -1,0 +1,166 @@
+{
+  "format": "sloplex-artifact-research/1",
+  "recorded": "2026-10-12",
+  "source_policy": "Owner authorized static analysis of the supplied Plex Linux download, overriding the prior clean-room restriction.",
+  "package": {
+    "filename": "plexmediaserver-1.43.4.10903-e5521bd8c.x86_64.rpm",
+    "version": "1.43.4.10903",
+    "release": "e5521bd8c",
+    "sha256": "391598ee0e495794ad60a596eb7386435d4ce4bf5ff8e922cf1f686bee91467b",
+    "rpm_signature": "NOKEY; signer authenticity was not independently verified"
+  },
+  "server_executable": {
+    "member": "usr/lib/plexmediaserver/Plex Media Server",
+    "sha256": "ca9b51a9fa39d94a45ee8c0e6bd69c9d584a2fd52a75c88cc1d5e78a22b1e8b3",
+    "native_analysis_status": "Hopper startup timed out at 120000 ms; Ghidra analysis timed out at 330000 ms. No server behavior inferred from these failures."
+  },
+  "shipped_client": {
+    "version": "4.160.0",
+    "member": "usr/lib/plexmediaserver/Resources/Plug-ins-e5521bd8c/WebClient.bundle/Contents/Resources/js/main-8792-5e6a05fd7fbc07797f88-plex-4.160.0-75ddd7b.js",
+    "sha256": "8be776dd488577eaf6d3e650d803dfead60375578c1dd92849001ec1139c8063",
+    "subset": "One byte-identical shipped JS member, narrowed to three factory source spans. Other chunks and external modules were not analyzed."
+  },
+  "rea": {
+    "version": "6.4.0",
+    "operation": "analyze_javascript_application",
+    "parent_evidence_id": "ev_ba44b1c791d65a1c36cfa77373085e656379e396798b7d46683516e28955ad2b",
+    "focused_evidence_id": "ev_121220e6825831cf9c8902df3d9b0946db689e3a1ff7078fdaa0261f86e560c0",
+    "focused_evidence_sha256": "7ec9494555145dad98399f530e80c26f2f0d44d735ff144a5ba58c039e180606",
+    "raw_evidence_directory": "/home/developer/.local/share/rea/evidence/plex-1.43.4.10903",
+    "factory_manifest_sha256": "f6fe57eb1a133844b8ff59f0a4ba8da27089dad3a969f437b5b21c14ba899df1",
+    "focused_graph_coverage": {
+      "status": "complete",
+      "truncated": false,
+      "omitted_count": 0,
+      "limits": []
+    },
+    "semantic_graph_status": "unknown",
+    "semantic_limitations": "External dependencies and dynamic calls remain unresolved; static syntax is not runtime proof."
+  },
+  "factory_sources": [
+    {
+      "module_key": "13733",
+      "source_sha256": "b3e682305c908d64a8578a504182945c7fed9bcae384eb4589f4429d0d13d5d0",
+      "location": {
+        "start": {
+          "line": 2,
+          "column": 280204
+        },
+        "end": {
+          "line": 2,
+          "column": 285760
+        }
+      },
+      "structural_fingerprint_sha256": "4652397b9deb6d035accc26a0e55f5c09e38f03086386ec9ac41d65d9f691ef8",
+      "sha256_verified": true
+    },
+    {
+      "module_key": "57491",
+      "source_sha256": "6256c48174bda6d6de1ce684b1c20fd5ef71c8db6ce8f2fbd10eb37ad3909622",
+      "location": {
+        "start": {
+          "line": 2,
+          "column": 162641
+        },
+        "end": {
+          "line": 2,
+          "column": 164270
+        }
+      },
+      "structural_fingerprint_sha256": "e5ad3be569e153dea4d3ace3816b1fac43e19d16776e8fa92f9dcffc09a5e4eb",
+      "sha256_verified": true
+    },
+    {
+      "module_key": "58090",
+      "source_sha256": "a05d4162b4750d68da06f416c5c1f9fd43496db8556bb69ed1c0560aedfd83e6",
+      "location": {
+        "start": {
+          "line": 2,
+          "column": 711242
+        },
+        "end": {
+          "line": 2,
+          "column": 714373
+        }
+      },
+      "structural_fingerprint_sha256": "04eaee87711440036f812327247405148096bdcd2588eb469846eebfeac577d8",
+      "sha256_verified": true
+    }
+  ],
+  "findings": [
+    {
+      "kind": "static_attribute_read",
+      "attribute": "playQueueSelectedItemOffset",
+      "node_id": "jag_node_3f5a275917ceda18c9c77b8d38e19cf9b3168fa38ce919c245ccccb5e8e3a159",
+      "mechanism": "call:r.get",
+      "interpretation": "Client getter syntax; REA endpoint categorization does not establish a network call."
+    },
+    {
+      "kind": "static_attribute_read",
+      "attribute": "playQueueTotalCount",
+      "node_id": "jag_node_547e758f0a4baa5445992f1e9265e55c2776154f3ee1913f017e9588bdf544db",
+      "mechanism": "call:get",
+      "interpretation": "Client getter syntax; REA endpoint categorization does not establish a network call."
+    },
+    {
+      "kind": "static_attribute_read",
+      "attribute": "playQueueSourceURI",
+      "node_id": "jag_node_5bf6cd0c3de9548493b68ab9c1a3d521822fc3006dc4b20092751a57dd9768b4",
+      "mechanism": "call:get",
+      "interpretation": "Client getter syntax; REA endpoint categorization does not establish a network call."
+    },
+    {
+      "kind": "static_attribute_read",
+      "attribute": "playQueueSelectedItemID",
+      "node_id": "jag_node_ba699bf0202f0b8b8dab9887df579b7c2feefe13cb4d82561a1f477e721e3b53",
+      "mechanism": "call:e.get",
+      "interpretation": "Client getter syntax; REA endpoint categorization does not establish a network call."
+    },
+    {
+      "kind": "static_attribute_read",
+      "attribute": "playQueueLastAddedItemID",
+      "node_id": "jag_node_dca2bbf64ac10d142aa2b27761dba63a05ad534a93aef82a9485091f4fad69ac",
+      "mechanism": "call:get",
+      "interpretation": "Client getter syntax; REA endpoint categorization does not establish a network call."
+    }
+  ],
+  "inferences": [
+    {
+      "claim": "The shipped client builds the local queue URL from /playQueues/ and its queue ID.",
+      "source_module": "58090",
+      "scope": "Static URL-construction syntax; no HTTP request was executed."
+    },
+    {
+      "claim": "Queue selection and its full-queue offset must be supplied separately from returned window contents.",
+      "source_modules": [
+        "13733",
+        "58090"
+      ],
+      "scope": "Static client field consumers, corroborated by the published API; no client playback certification."
+    }
+  ],
+  "public_api": {
+    "url": "https://developer.plex.tv/pms/",
+    "version": "1.2.3",
+    "retrieved": "2026-10-12",
+    "sha256": "e1ea0ead7722693de15e807a7d9e1e70885464dae47aa32a8f4ef1844a746138",
+    "scope": "Methods, paths, parameters and play queue response names; original Go implementation."
+  },
+  "execution": {
+    "plex_server_started": false,
+    "shipped_javascript_executed": false,
+    "live_differential_test": false,
+    "official_client_playback_test": false
+  },
+  "implementation": [
+    "docs/spec/playqueues.md",
+    "internal/server/playqueues.go",
+    "internal/server/playqueues_test.go"
+  ],
+  "validation": [
+    "GOMAXPROCS=2 go test -p 2 ./internal/server -run TestPlayQueue -count=1 -timeout=90s",
+    "GOMAXPROCS=2 go test -race -p 2 ./internal/server -timeout=90s",
+    "GOMAXPROCS=2 go vet -p 2 ./...",
+    "GOMAXPROCS=2 go test -race -p 2 ./... -timeout=90s"
+  ]
+}

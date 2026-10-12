@@ -33,6 +33,7 @@ Sloplex is a standalone product:
 | Artwork                            | ✅ local posters/fanart/banners, episode frame grabs, resizing |
 | Date-based TV episodes             | ✅ `Show - 2024-03-15.mkv`, seasons by year |
 | Music                              | ⏳                                       |
+| Video play queues                  | ✅ local queue lifecycle, windows, duplicate entry IDs, shuffle and account isolation ([contract](docs/spec/playqueues.md)); client/session integration pending |
 | Playlists                          | ✅ per user; add movies, episodes, seasons or whole shows; reorder; play all |
 | Collections                        | ✅ automatic from `.nfo` movie sets; manual ones through the admin API |
 | Local metadata (`.nfo`)            | ✅ summaries, ratings, genres, cast, sort titles; read from files, never fetched online |

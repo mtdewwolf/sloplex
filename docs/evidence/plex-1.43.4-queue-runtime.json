@@ -1,0 +1,258 @@
+{
+  "format": "sloplex-runtime-contract/1",
+  "recorded": "2026-10-12",
+  "target": "PMS 1.43.4.10903-e5521bd8c",
+  "rea_evidence_id": "ev_eaa53b2b7c05309b1b9f9324fe30de1eff4b591835debbb9ed5e17c391019a15",
+  "scope": "Controlled HTTP queue lifecycle with two original synthetic AVI videos, local admin token, fresh unclaimed server profile, no external network access. This is not a playback-stream or official-client certification.",
+  "observations": [
+    {
+      "label": "create_queue",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueSelectedItemID": "1",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "1",
+        "playQueueVersion": "1"
+      },
+      "size": "1",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "1",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "append_second",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "2",
+        "playQueueSelectedItemID": "1",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "2",
+        "playQueueVersion": "2"
+      },
+      "size": "2",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "1",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "2",
+          "title": "Queue Probe B"
+        }
+      ]
+    },
+    {
+      "label": "append_duplicate",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "3",
+        "playQueueSelectedItemID": "1",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "1",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "2",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "3",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "read_queue",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "3",
+        "playQueueSelectedItemID": "1",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "1",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "2",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "3",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "timeline_duplicate",
+      "status": 200,
+      "queue_attributes": {},
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "after_timeline",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "3",
+        "playQueueSelectedItemID": "3",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "3",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "1",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "2",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "3",
+          "title": "Queue Probe A"
+        }
+      ]
+    },
+    {
+      "label": "center_window_zero",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "3",
+        "playQueueSelectedItemID": "3",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "exclude_before_zero_window",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "3",
+        "playQueueSelectedItemID": "3",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "3",
+        "playQueueVersion": "3"
+      },
+      "size": "0",
+      "metadata": []
+    },
+    {
+      "label": "insert_next",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueLastAddedItemID": "3",
+        "playQueueSelectedItemID": "3",
+        "playQueueSelectedItemOffset": "2",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "4",
+        "playQueueVersion": "4"
+      },
+      "size": "4",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "1",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "2",
+          "title": "Queue Probe B"
+        },
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "3",
+          "title": "Queue Probe A"
+        },
+        {
+          "ratingKey": "4",
+          "playQueueItemID": "4",
+          "title": "Queue Probe B"
+        }
+      ]
+    },
+    {
+      "label": "clear_queue",
+      "status": 200,
+      "queue_attributes": {
+        "playQueueID": "1",
+        "playQueueSelectedItemID": "3",
+        "playQueueSelectedItemOffset": "0",
+        "playQueueSelectedMetadataItemID": "3",
+        "playQueueShuffled": "0",
+        "playQueueTotalCount": "1",
+        "playQueueVersion": "5"
+      },
+      "size": "1",
+      "metadata": [
+        {
+          "ratingKey": "3",
+          "playQueueItemID": "3",
+          "title": "Queue Probe A"
+        }
+      ]
+    }
+  ],
+  "confirmed_differences": [
+    "Timeline changes selected occurrence and offset without advancing queue version",
+    "GET window=0 returns no metadata",
+    "DELETE queue items retains the selected occurrence in this setup",
+    "Manually added queues expose playQueueLastAddedItemID"
+  ],
+  "raw_evidence": "/home/developer/.local/share/rea/evidence/plex-1.43.4.10903/queue-runtime-initial-success.json",
+  "credentials": "Generated local admin token used only in memory; token and private server logs are excluded from this record."
+}

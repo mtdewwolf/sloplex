@@ -10,7 +10,8 @@ import (
 // MediaContainer is the envelope of every API response.
 // See docs/spec/http-api.md.
 type MediaContainer struct {
-	XMLName xml.Name `xml:"MediaContainer" json:"-"`
+	XMLName        xml.Name `xml:"MediaContainer" json:"-"`
+	*PlayQueueInfo `xml:"-"`
 
 	Size      int  `xml:"size,attr" json:"size"`
 	TotalSize *int `xml:"totalSize,attr,omitempty" json:"totalSize,omitempty"`
@@ -126,9 +127,10 @@ type Metadata struct {
 	Type               string `xml:"type,attr" json:"type"`
 	// PlaylistType and Smart describe playlists; PlaylistItemID marks an
 	// item's entry in one.
-	PlaylistType   string `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
-	Smart          string `xml:"smart,attr,omitempty" json:"smart,omitempty"`
-	PlaylistItemID int    `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
+	PlaylistType    string `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
+	Smart           string `xml:"smart,attr,omitempty" json:"smart,omitempty"`
+	PlaylistItemID  int    `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
+	PlayQueueItemID int    `xml:"playQueueItemID,attr,omitempty" json:"playQueueItemID,omitempty"`
 	// Subtype and CollectionSource describe collections.
 	Subtype          string `xml:"subtype,attr,omitempty" json:"subtype,omitempty"`
 	CollectionSource string `xml:"collectionSource,attr,omitempty" json:"collectionSource,omitempty"`
@@ -288,6 +290,10 @@ func writeContainer(w http.ResponseWriter, r *http.Request, mc MediaContainer) {
 	_, _ = w.Write([]byte(xml.Header))
 	enc := xml.NewEncoder(w)
 	enc.Indent("", "  ")
-	_ = enc.Encode(mc)
+	if mc.PlayQueueInfo == nil {
+		_ = enc.Encode(mc)
+	} else {
+		_ = enc.EncodeElement(mc, xml.StartElement{Name: xml.Name{Local: "MediaContainer"}, Attr: mc.PlayQueueInfo.xmlAttrs()})
+	}
 	_, _ = w.Write([]byte("\n"))
 }
