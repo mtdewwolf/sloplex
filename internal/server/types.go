@@ -134,10 +134,13 @@ type Metadata struct {
 	Type               string `xml:"type,attr" json:"type"`
 	// PlaylistType and Smart describe playlists; PlaylistItemID marks an
 	// item's entry in one.
-	PlaylistType    string `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
-	Smart           string `xml:"smart,attr,omitempty" json:"smart,omitempty"`
-	PlaylistItemID  int    `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
-	PlayQueueItemID int    `xml:"playQueueItemID,attr,omitempty" json:"playQueueItemID,omitempty"`
+	PlaylistType    string          `xml:"playlistType,attr,omitempty" json:"playlistType,omitempty"`
+	Smart           string          `xml:"smart,attr,omitempty" json:"smart,omitempty"`
+	PlaylistItemID  int             `xml:"playlistItemID,attr,omitempty" json:"playlistItemID,omitempty"`
+	PlayQueueItemID int             `xml:"playQueueItemID,attr,omitempty" json:"playQueueItemID,omitempty"`
+	SessionKey      string          `xml:"sessionKey,attr,omitempty" json:"sessionKey,omitempty"`
+	User            *PlaybackUser   `xml:"User,omitempty" json:"User,omitempty"`
+	Player          *PlaybackPlayer `xml:"Player,omitempty" json:"Player,omitempty"`
 	// Subtype and CollectionSource describe collections.
 	Subtype          string `xml:"subtype,attr,omitempty" json:"subtype,omitempty"`
 	CollectionSource string `xml:"collectionSource,attr,omitempty" json:"collectionSource,omitempty"`

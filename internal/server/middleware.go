@@ -20,7 +20,7 @@ const tokenHeader = "X-Plex-Token"
 var corsAllowHeaders = "Accept, Content-Type, Range, " +
 	"X-Plex-Token, X-Plex-Client-Identifier, X-Plex-Product, X-Plex-Version, " +
 	"X-Plex-Platform, X-Plex-Platform-Version, X-Plex-Device, X-Plex-Device-Name, " +
-	"X-Plex-Container-Start, X-Plex-Container-Size"
+	"X-Plex-Container-Start, X-Plex-Container-Size, X-Plex-Session-Identifier"
 
 // cors allows browser clients from any origin. Credentials travel in
 // headers or query parameters, never cookies. Tokenless trusted-network

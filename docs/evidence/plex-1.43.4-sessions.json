@@ -1,0 +1,49 @@
+{
+ "format": "sloplex-artifact-research/1",
+ "recorded": "2026-10-12",
+ "target": "PMS 1.43.4.10903-e5521bd8c",
+ "scope": "Timeline-created entries in GET /status/sessions",
+ "runtime": [
+  {
+   "rea_evidence_id": "ev_d85b4f9db3ac011e8129a8b8d680d3d60edc361b237f534a168150af89d4d01b",
+   "evidence_sha256": "7bb60eb846c501b7b38605f842ef65009daf5e550309c1bfd2fa74ec713a2805",
+   "scenario": "pms-session-scenario.json",
+   "scope": "Client-keyed session creation, query-string session parameters, direct part request, paused/buffering/stopped transitions."
+  },
+  {
+   "rea_evidence_id": "ev_9b4e98c2aa3013fa8fb3dc99199f966e13ae17be5c4d9718deb4aa37f9c2ac66",
+   "evidence_sha256": "f7f8882462ec0fc4ec35a9f219323e8fe7b972b4af7f3ea23ddfeb179453de9e",
+   "scenario": "pms-session-identity-scenario.json",
+   "probe_sha256": "5b31b5cb1014061c23ea7cfff6b11940143ba9577eb8c0f89e2390b4d44a8cea",
+   "sanitized_observations_sha256": "0cac3983931ccf8296add90894dd9f7751812c6ddfdd25e93b6abe130e326cf6",
+   "scope": "X-Plex-Session-Identifier and X-Plex-Client-Identifier identity, cross-item replacement, stop without time. The terminal capture truncated; the probe's sanitized observation file holds the full sequence."
+  }
+ ],
+ "environment": "Copied initialized local profile in a loopback-only network namespace; two synthetic 4 s rawvideo movies; admin token. No official client executed.",
+ "observations": [
+  "A timeline report with state=playing and a client identifier creates one Video in /status/sessions with sessionKey, viewOffset=time, duration, User id and a Player carrying machineIdentifier, product, version, state and userID.",
+  "Query parameters session and sessionIdentifier did not create a separate session; the client-keyed entry was updated.",
+  "Each distinct X-Plex-Session-Identifier header created a new session with the next sessionKey, even for the same client and item.",
+  "A report reusing a session header with a different client identifier and item replaced that session's item and player in place, keeping its sessionKey.",
+  "state=stopped without time removed the matching session.",
+  "paused and buffering updated Player.state and viewOffset; stopped removed the session; other sessions were unaffected.",
+  "Timeline responses were empty MediaContainers (size 0) in every case."
+ ],
+ "implementation_contract": {
+  "identity": "(account, X-Plex-Session-Identifier) when the header is present, otherwise (account, X-Plex-Client-Identifier). Matches observation; account scoping is Sloplex design.",
+  "lifecycle": "stopped deletes the entry when it names the same item. Entries expire 2 minutes after their last report, with 32 per account and 256 total, oldest evicted (sloplex).",
+  "publication": "Sessions are published only after the playstate/queue save succeeds; access is rechecked on every listing (sloplex).",
+  "access": "GET /status/sessions requires an admin (sloplex; PMS was observed with its admin token only)."
+ },
+ "checks": {
+  "targeted_race": "passed",
+  "server_package_race": "passed"
+ },
+ "raw_evidence_directory": "/home/developer/.local/share/rea/evidence/plex-1.43.4.10903",
+ "limitations": [
+  "Transcode session fields (TranscodeSession, decisions, bandwidth) were not compared.",
+  "PMS session expiry timing and limits were not measured.",
+  "Stopping a session with a different item than it holds was not observed.",
+  "No official-client playback flow has been executed."
+ ]
+}
