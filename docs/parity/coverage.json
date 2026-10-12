@@ -137,11 +137,28 @@
       "priority": "P1",
       "summary": "Official-client orchestration families are missing or narrow.",
       "attribution": "Both",
-      "status": "open",
-      "owner": "GPT 6.1 High",
-      "evidence": [],
+      "status": "partial",
+      "owner": "Coordinator",
+      "evidence": [
+        "docs/spec/playqueues.md",
+        "internal/server/playqueues.go",
+        "internal/server/playqueues_test.go",
+        "docs/evidence/plex-1.43.4-playqueues.json",
+        "docs/evidence/plex-1.43.4-timeline.json",
+        "docs/evidence/plex-1.43.4-queue-windows.json",
+        "docs/evidence/plex-1.43.4-queue-regions.json",
+        "docs/spec/providers.md",
+        "docs/evidence/plex-1.43.4-providers.json",
+        "internal/server/providers_test.go",
+        "docs/spec/home-hubs.md",
+        "docs/evidence/plex-1.43.4-hubs.json",
+        "internal/server/homehubs_test.go",
+        "docs/spec/playback-sessions.md",
+        "docs/evidence/plex-1.43.4-sessions.json",
+        "internal/server/playback_sessions_test.go"
+      ],
       "acceptance_source": "../reviews/2026-10-11-consolidated-review.md",
-      "remaining": "Queue agent hit GPT usage limit before implementation; local queues, sessions/hubs/events remain open."
+      "remaining": "Local video queues, timeline selection, Up Next markers, provider discovery, basic home/section hubs and timeline-reported /status/sessions implemented with local regressions and controlled PMS HTTP shape/order probes. Device handoff, events, trailers, continuous queues, transcode session details, recommendation/grouping rules and official-client/browser playback remain open."
     },
     {
       "id": "G10",
@@ -549,6 +566,67 @@
         "No live PMS or official-client comparison",
         "All three GPT subagents reached provider usage limit; queue and account preference work pending"
       ]
+    },
+    "rea_playqueues": {
+      "go": "1.27.2",
+      "targeted_queue_race": "passed",
+      "server_race": "passed",
+      "vet": "passed",
+      "full_race": "passed",
+      "limits": [
+        "FFmpeg/ffprobe absent; external media tests can skip",
+        "No live PMS differential or official-client/browser playback tests",
+        "Full server native analyses timed out; focused shipped-client static analysis succeeded",
+        "REA custom launcher registration doctor reports config drift; actual MCP and engine checks pass"
+      ]
+    },
+    "rea_timeline": {
+      "targeted_race": "passed",
+      "vet": "passed",
+      "full_race": "passed",
+      "runtime": "PMS bootstrap under isolated loopback succeeded; queue lifecycle comparison in progress",
+      "limits": [
+        "No official-client playback; static client findings do not certify native semantics",
+        "FFmpeg/ffprobe absent on host"
+      ]
+    },
+    "rea_queue_regions": {
+      "targeted_race": "passed",
+      "vet": "passed",
+      "full_race": "passed uncached",
+      "runtime": "Two complete REA PMS queue captures with initialized local profile and loopback-only networking",
+      "limits": [
+        "No official-client or playback-stream verification",
+        "Move/shuffle/reset region behavior not exhaustively compared",
+        "First fresh-profile retry failed in capture finalization; not used for queue conclusions"
+      ]
+    },
+    "rea_provider_discovery": {
+      "targeted_race": "passed",
+      "vet": "passed",
+      "full_race": "passed uncached before home-hub increment",
+      "runtime": "Populated PMS provider response captured; hash-verified shipped model factories analyzed"
+    },
+    "rea_home_hubs": {
+      "targeted_race": "passed",
+      "vet": "passed",
+      "full_race": "passed uncached",
+      "format": "passed",
+      "diff_check": "passed",
+      "runtime": "REA PMS movie-library hub shape/count capture completed",
+      "limits": [
+        "Native resume/On Deck hubs empty; selection policy remains original Sloplex behavior",
+        "TV recent grouping and advanced recommendations not reconstructed",
+        "No official-client startup or playback-stream certification"
+      ]
     }
+  },
+  "last_implementation_update": "2026-10-12",
+  "artifact_research": {
+    "pms_build": "1.43.4.10903",
+    "client_bundle": "Plex Web 4.160.0",
+    "evidence": "docs/evidence/plex-1.43.4-playqueues.json",
+    "live_target_established": true,
+    "runtime_scope": "Isolated loopback PMS HTTP bootstrap, provider discovery and synthetic-video queue probes; no official client or stream playback."
   }
 }
